@@ -6,17 +6,37 @@ use GraphLib\Exceptions\IncompatiblePortTypeException;
 use GraphLib\Exceptions\IncompatiblePolarityException;
 use GraphLib\Exceptions\MaxConnectionsExceededException;
 
+/**
+ * Represents a graph containing nodes and connections, and provides methods for graph manipulation,
+ * validation, and serialization.
+ */
 class Graph implements \JsonSerializable
 {
-    /** @var Node[] */
+    /**
+     * @var Node[] An array of serializable nodes in the graph.
+     */
     public array $serializableNodes = [];
-    /** @var Connection[] */
+    /**
+     * @var Connection[] An array of serializable connections in the graph.
+     */
     public array $serializableConnections = [];
 
-    // Caches for faster lookups
+    /**
+     * @var array Internal cache for faster node lookups by sID.
+     */
     private array $nodeRegistry = [];
+    /**
+     * @var array Internal cache for faster port lookups by sID.
+     */
     private array $portRegistry = [];
 
+    /**
+     * Creates a new Node, adds it to the graph, and returns it.
+     *
+     * @param string $id The unique identifier for the node.
+     * @param string $modifier An optional modifier string for the node.
+     * @return Node The newly created Node instance.
+     */
     public function createNode(string $id, string $modifier = ''): Node
     {
         $node = new Node($id, $modifier);
@@ -24,6 +44,12 @@ class Graph implements \JsonSerializable
         return $node;
     }
 
+    /**
+     * Adds an existing Node to the graph and registers its ports.
+     *
+     * @param Node $node The Node instance to add.
+     * @return Node The added Node instance.
+     */
     public function addNode(Node $node): Node
     {
         $this->serializableNodes[] = $node;
@@ -34,28 +60,38 @@ class Graph implements \JsonSerializable
         return $node;
     }
 
+    /**
+     * Establishes a connection between two ports, performing validation checks.
+     *
+     * @param Port $portOut The output port initiating the connection.
+     * @param Port $portIn The input port receiving the connection.
+     * @return self Returns the Graph instance for method chaining.
+     * @throws IncompatiblePolarityException If the ports have incompatible polarities (e.g., output to output).
+     * @throws IncompatiblePortTypeException If the ports have incompatible data types.
+     * @throws MaxConnectionsExceededException If the input port has reached its maximum allowed connections.
+     */
     public function connect(Port $portOut, Port $portIn): self
     {
         // 1. Validate polarity: Output to Input
         if ($portOut->polarity !== 1) { // 1 for output
             throw new IncompatiblePolarityException(
                 "Port '{$portOut->id}' (Node: {$portOut->nodeSID}) is not an output port. " .
-                "Only output ports can initiate a connection."
+                    "Only output ports can initiate a connection."
             );
         }
         if ($portIn->polarity !== 0) { // 0 for input
             throw new IncompatiblePolarityException(
                 "Port '{$portIn->id}' (Node: {$portIn->nodeSID}) is not an input port. " .
-                "Only input ports can receive a connection."
+                    "Only input ports can receive a connection."
             );
         }
 
         // 2. Validate type compatibility
-        if ($portOut->type !== $portIn->type) {
+        if ($portOut->type !== $portIn->type && ($portOut->type !== 'any' && $portIn->type !== 'any')) {
             throw new IncompatiblePortTypeException(
                 "Cannot connect port '{$portOut->id}' (type: {$portOut->type}) " .
-                "to port '{$portIn->id}' (type: {$portIn->type}). " .
-                "Port types must match."
+                    "to port '{$portIn->id}' (type: {$portIn->type}). " .
+                    "Port types must match."
             );
         }
 
@@ -71,7 +107,7 @@ class Graph implements \JsonSerializable
         if ($portIn->maxConnections > 0 && $currentConnections >= $portIn->maxConnections) {
             throw new MaxConnectionsExceededException(
                 "Port '{$portIn->id}' (Node: {$portIn->nodeSID}) has reached its maximum of " .
-                "{$portIn->maxConnections} connections."
+                    "{$portIn->maxConnections} connections."
             );
         }
 
@@ -116,8 +152,11 @@ class Graph implements \JsonSerializable
     }
 
     /**
-     * Improved auto-layout using topological sort (Kahn's algorithm).
-     * This version detects cycles to prevent infinite loops.
+     * Performs an auto-layout of the nodes in the graph using a topological sort (Kahn's algorithm).
+     * If a cycle is detected, it falls back to a simple grid layout.
+     *
+     * @param int $offsetX The horizontal offset between nodes in the layout.
+     * @param int $offsetY The vertical offset between nodes in the layout.
      */
     public function autoLayout(int $offsetX = 400, int $offsetY = 220)
     {
@@ -192,6 +231,12 @@ class Graph implements \JsonSerializable
         }
     }
 
+    /**
+     * Lays out nodes in a simple grid pattern. Used as a fallback if topological sort fails (e.g., due to cycles).
+     *
+     * @param int $offsetX The horizontal spacing between nodes.
+     * @param int $offsetY The vertical spacing between nodes.
+     */
     private function gridLayout(int $offsetX, int $offsetY): void
     {
         $x = 0.0;
@@ -210,17 +255,35 @@ class Graph implements \JsonSerializable
         }
     }
 
+    /**
+     * Finds a Node by a given Port's sID.
+     *
+     * @param string $portSID The sID of the port to find the associated node for.
+     * @return Node|null The Node instance if found, otherwise null.
+     */
     public function findNodeByPortSID(string $portSID): ?Node
     {
         $port = $this->portRegistry[$portSID] ?? null;
         return $port ? ($this->nodeRegistry[$port->nodeSID] ?? null) : null;
     }
 
+    /**
+     * Finds a Port by its sID.
+     *
+     * @param string $portSID The sID of the port to find.
+     * @return Port|null The Port instance if found, otherwise null.
+     */
     public function findPortBySID(string $portSID): ?Port
     {
         return $this->portRegistry[$portSID] ?? null;
     }
 
+    /**
+     * Serializes the graph into a JSON string.
+     * Automatically performs auto-layout and updates connection line points before serialization.
+     *
+     * @return string The JSON representation of the graph.
+     */
     public function toJson(): string
     {
         $this->autoLayout();
@@ -230,6 +293,11 @@ class Graph implements \JsonSerializable
         return json_encode($this, JSON_UNESCAPED_SLASHES);
     }
 
+    /**
+     * Specifies data which should be serialized to JSON.
+     *
+     * @return array The data to be serialized.
+     */
     public function jsonSerialize(): array
     {
         return [
@@ -238,6 +306,10 @@ class Graph implements \JsonSerializable
         ];
     }
 
+    /**
+     * Writes the JSON representation of the graph to a text file.
+     * The filename will be a timestamp followed by '_kart_graphlib.txt'.
+     */
     public function toTxt()
     {
         file_put_contents(time() . '_kart_graphlib.txt', $this->toJson());

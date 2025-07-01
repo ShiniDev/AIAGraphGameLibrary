@@ -4,6 +4,9 @@ namespace GraphLib;
 
 use GraphLib\Traits\SerializableIdentity;
 
+/**
+ * Represents a node in the graph, which is a functional block that can have input and output ports.
+ */
 class Node implements \JsonSerializable
 {
     use SerializableIdentity;
@@ -20,10 +23,18 @@ class Node implements \JsonSerializable
     public Color $defaultColor;
     public Color $outlineSelectedColor;
     public Color $outlineHoverColor;
-    /** @var Port[] */
+    /**
+     * @var Port[] An array of ports belonging to this node.
+     */
     public array $serializablePorts = [];
     public int $instanceID;
 
+    /**
+     * Constructs a new Node instance.
+     *
+     * @param string $id The unique identifier for the node.
+     * @param string|int $modifier An optional modifier for the node, can be string or int.
+     */
     public function __construct(string $id, string|int $modifier = '')
     {
         $this->id = $id;
@@ -36,6 +47,13 @@ class Node implements \JsonSerializable
         $this->outlineHoverColor = new Color(1.0, 0.81, 0.30);
     }
 
+    /**
+     * Adds a port to this node.
+     *
+     * @param Port $port The Port instance to add.
+     * @param Vector2 $portLocalPosition The local position of the port relative to the node.
+     * @return self Returns the Node instance for method chaining.
+     */
     public function addPort(Port $port, Vector2 $portLocalPosition): self
     {
         $port->setNodeInfo($this->sID, $this->instanceID);
@@ -44,6 +62,12 @@ class Node implements \JsonSerializable
         return $this;
     }
 
+    /**
+     * Sets the position and size of the node, and updates the positions of its ports.
+     *
+     * @param Vector3 $position The global position of the node.
+     * @param Vector2 $size The size of the node.
+     */
     public function setPosition(Vector3 $position, Vector2 $size): void
     {
         $this->serializableRectTransform = new SerializableRectTransform(
@@ -60,6 +84,12 @@ class Node implements \JsonSerializable
         }
     }
 
+    /**
+     * Retrieves a port by its ID.
+     *
+     * @param string $portId The ID of the port to retrieve.
+     * @return Port|null The Port instance if found, otherwise null.
+     */
     public function getPort(string $portId): ?Port
     {
         foreach ($this->serializablePorts as $port) {
@@ -70,6 +100,11 @@ class Node implements \JsonSerializable
         return null;
     }
 
+    /**
+     * Specifies data which should be serialized to JSON.
+     *
+     * @return array The data to be serialized.
+     */
     public function jsonSerialize(): array
     {
         return [

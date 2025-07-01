@@ -4,6 +4,9 @@ namespace GraphLib;
 
 use GraphLib\Traits\SerializableIdentity;
 
+/**
+ * Represents a port on a node, which can be either an input or an output.
+ */
 class Port implements \JsonSerializable
 {
     use SerializableIdentity;
@@ -26,8 +29,24 @@ class Port implements \JsonSerializable
     public int $nodeInstanceID;
     public string $nodeSID;
 
-    public function __construct(string $id, string $type, int $polarity, int $maxConnections = 0, ?Color $color = null)
+    /**
+     * @var Graph Reference to the graph this port belongs to.
+     */
+    private Graph $graph;
+
+    /**
+     * Constructs a new Port instance.
+     *
+     * @param Graph $graph The graph instance this port belongs to.
+     * @param string $id The unique identifier for the port.
+     * @param string $type The data type of the port (e.g., 'float', 'bool', 'vector3').
+     * @param int $polarity The polarity of the port (0 for input, 1 for output).
+     * @param int $maxConnections The maximum number of connections this port can have (0 for unlimited).
+     * @param Color|null $color The default color of the port icon.
+     */
+    public function __construct(Graph $graph, string $id, string $type, int $polarity, int $maxConnections = 0, ?Color $color = null)
     {
+        $this->graph = $graph;
         $this->id = $id;
         $this->sID = $this->generateSID();
         $this->type = $type;
@@ -40,17 +59,47 @@ class Port implements \JsonSerializable
         $this->iconColorConnected = new Color(0.98, 0.94, 0.84);
     }
 
+    /**
+     * Sets the node information for this port.
+     *
+     * @param string $nodeSID The sID of the parent node.
+     * @param int $nodeInstanceID The instance ID of the parent node.
+     */
     public function setNodeInfo(string $nodeSID, int $nodeInstanceID): void
     {
         $this->nodeSID = $nodeSID;
         $this->nodeInstanceID = $nodeInstanceID;
     }
 
+    /**
+     * Connects this port to a target port.
+     * This is a fluent interface that calls the Graph's connect method.
+     *
+     * @param Port $targetPort The port to connect to.
+     * @throws IncompatiblePolarityException If the ports have incompatible polarities.
+     * @throws IncompatiblePortTypeException If the ports have incompatible data types.
+     * @throws MaxConnectionsExceededException If the target port has reached its maximum allowed connections.
+     */
+    public function connectTo(Port $targetPort): void
+    {
+        $this->graph->connect($this, $targetPort);
+    }
+
+    /**
+     * Sets the local position of the port relative to its parent node.
+     *
+     * @param Vector2 $localPosition The local position.
+     */
     public function setLocalPosition(Vector2 $localPosition): void
     {
         $this->localPosition = $localPosition;
     }
 
+    /**
+     * Updates the global position of the port and its control point based on the parent node's position.
+     *
+     * @param Vector3 $nodePosition The global position of the parent node.
+     */
     public function updatePositions(Vector3 $nodePosition): void
     {
         if ($this->localPosition === null) {
@@ -82,6 +131,11 @@ class Port implements \JsonSerializable
         );
     }
 
+    /**
+     * Specifies data which should be serialized to JSON.
+     *
+     * @return array The data to be serialized.
+     */
     public function jsonSerialize(): array
     {
         // Explicit serialization for predictable output
