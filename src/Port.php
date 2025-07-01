@@ -13,6 +13,7 @@ class Port implements \JsonSerializable
     public ?Vector2 $localPosition = null; // Storing local position directly on the port.
     public ?SerializableRectTransform $serializableRectTransform = null;
     public int $polarity;
+    public string $type;
     public int $maxConnections;
     public Color $iconColorDefault;
     public Color $iconColorHover;
@@ -25,10 +26,11 @@ class Port implements \JsonSerializable
     public int $nodeInstanceID;
     public string $nodeSID;
 
-    public function __construct(string $id, int $polarity, int $maxConnections = 0, ?Color $color = null)
+    public function __construct(string $id, string $type, int $polarity, int $maxConnections = 0, ?Color $color = null)
     {
         $this->id = $id;
         $this->sID = $this->generateSID();
+        $this->type = $type;
         $this->polarity = $polarity;
         $this->maxConnections = $maxConnections;
         $defaultColor = $color ?? new Color(0.8, 0.8, 0.8);

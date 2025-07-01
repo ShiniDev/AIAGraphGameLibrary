@@ -2,6 +2,10 @@
 
 namespace GraphLib;
 
+use GraphLib\Exceptions\IncompatiblePortTypeException;
+use GraphLib\Exceptions\IncompatiblePolarityException;
+use GraphLib\Exceptions\MaxConnectionsExceededException;
+
 class Graph implements \JsonSerializable
 {
     /** @var Node[] */
@@ -32,6 +36,45 @@ class Graph implements \JsonSerializable
 
     public function connect(Port $portOut, Port $portIn): self
     {
+        // 1. Validate polarity: Output to Input
+        if ($portOut->polarity !== 1) { // 1 for output
+            throw new IncompatiblePolarityException(
+                "Port '{$portOut->id}' (Node: {$portOut->nodeSID}) is not an output port. " .
+                "Only output ports can initiate a connection."
+            );
+        }
+        if ($portIn->polarity !== 0) { // 0 for input
+            throw new IncompatiblePolarityException(
+                "Port '{$portIn->id}' (Node: {$portIn->nodeSID}) is not an input port. " .
+                "Only input ports can receive a connection."
+            );
+        }
+
+        // 2. Validate type compatibility
+        if ($portOut->type !== $portIn->type) {
+            throw new IncompatiblePortTypeException(
+                "Cannot connect port '{$portOut->id}' (type: {$portOut->type}) " .
+                "to port '{$portIn->id}' (type: {$portIn->type}). " .
+                "Port types must match."
+            );
+        }
+
+        // 3. Validate max connections for the input port
+        // Count existing connections to the input port
+        $currentConnections = 0;
+        foreach ($this->serializableConnections as $existingConnection) {
+            if ($existingConnection->port1SID === $portIn->sID) {
+                $currentConnections++;
+            }
+        }
+
+        if ($portIn->maxConnections > 0 && $currentConnections >= $portIn->maxConnections) {
+            throw new MaxConnectionsExceededException(
+                "Port '{$portIn->id}' (Node: {$portIn->nodeSID}) has reached its maximum of " .
+                "{$portIn->maxConnections} connections."
+            );
+        }
+
         $connection = new Connection($portOut, $portIn);
         $this->serializableConnections[] = $connection;
         return $this;
