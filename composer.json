@@ -1,0 +1,10 @@
+{
+    "name": "haba/html",
+    "type": "library",
+    "autoload": {
+        "psr-4": {
+            "GraphLib\\": "src/"
+        }
+    },
+    "require": {}
+}
