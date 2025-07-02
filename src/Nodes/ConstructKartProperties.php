@@ -34,11 +34,12 @@ class ConstructKartProperties extends Node
         // Add the ports to the node
         $this->addPort($this->countryInput, new Vector2(-266.1, -130.5));
         $this->addPort($this->nameInput, new Vector2(-266.1, -84.2));
-        $this->addPort($this->output, new Vector2(19.8, -84.2));
         $this->addPort($this->topSpeedInput, new Vector2(-266.1, -219.56)); // Swapped with turning to be in visual order
         $this->addPort($this->accelerationInput, new Vector2(-266.1, -264.4));
         $this->addPort($this->colorInput, new Vector2(-266.1, -176.1));
         $this->addPort($this->turningInput, new Vector2(-266.1, -307.4)); // Swapped with top speed
+
+        $this->addPort($this->output, new Vector2(19.8, -84.2));
 
         $graph->addNode($this);
     }

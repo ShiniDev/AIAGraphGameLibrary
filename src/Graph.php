@@ -6,6 +6,7 @@ use GraphLib\Exceptions\IncompatiblePortTypeException;
 use GraphLib\Exceptions\IncompatiblePolarityException;
 use GraphLib\Exceptions\MaxConnectionsExceededException;
 use GraphLib\Nodes\Kart;
+use GraphLib\Nodes\Spherecast;
 use GraphLib\Traits\NodeFactory;
 
 /**
@@ -350,5 +351,21 @@ class Graph implements \JsonSerializable
 
         // 5. Return the created Kart so it can be used further
         return $kart;
+    }
+
+    public function initializeSphereCast(float $radius, float $distance): Spherecast
+    {
+        $radiusFloat = $this->createFloat($radius);
+        $distanceFloat = $this->createFloat($distance);
+        $sphereCast = $this->createSpherecast();
+        $sphereCast->connectDistance($distanceFloat->getOutput());
+        $sphereCast->connectRadius($radiusFloat->getOutput());
+        return $sphereCast;
+    }
+
+    public function debug(Port $port)
+    {
+        $debug = $this->createDebug();
+        $debug->connect($port);
     }
 }

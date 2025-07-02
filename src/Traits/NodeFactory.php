@@ -109,9 +109,9 @@ trait NodeFactory
     {
         return new HitInfo($this->graph);
     }
-    public function createKart(bool $isPlayer = false): Kart
+    public function createKart(bool $debug = true): Kart
     {
-        return new Kart($this->graph, $isPlayer);
+        return new Kart($this->graph, $debug);
     }
     public function createKartGetVector3(GetKartVector3Modifier $mod): KartGetVector3
     {

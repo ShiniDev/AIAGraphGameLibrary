@@ -28,10 +28,11 @@ class ConstructVector3 extends Node
         $this->inputY = new Port($graph, 'Float2', 'float', 0, 1, new Color(0.867, 0.808, 0.0));
         $this->inputZ = new Port($graph, 'Float3', 'float', 0, 1, new Color(0.867, 0.808, 0.0));
 
-        $this->addPort($this->output, new Vector2(19.8, -84.2));
         $this->addPort($this->inputX, new Vector2(-266.1, -176.1));
         $this->addPort($this->inputY, new Vector2(-266.1, -84.2));
         $this->addPort($this->inputZ, new Vector2(-266.1, -130.5));
+
+        $this->addPort($this->output, new Vector2(19.8, -84.2));
 
         $graph->addNode($this);
     }

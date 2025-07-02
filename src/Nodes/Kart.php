@@ -11,34 +11,39 @@ use GraphLib\Vector2;
 class Kart extends Node
 {
     public Port $propertiesInput;
-    public Port $spherecastInput1;
-    public Port $spherecastInput2;
-    public Port $spherecastInput3;
+    public Port $spherecastTopInput;
+    public Port $spherecastMiddleInput;
+    public Port $spherecastBottomInput;
 
-    public Port $raycastHitOutput1;
-    public Port $raycastHitOutput2;
-    public Port $raycastHitOutput3;
+    public Port $raycastHitTopOutput;
+    public Port $raycastHitMiddleOutput;
+    public Port $raycastHitBottomOutput;
 
     public function __construct(Graph $graph, bool $debug = false)
     {
         parent::__construct('Kart', $debug ? 'True' : 'False');
 
         // Define all ports and assign them to properties
-        $this->spherecastInput1 = new Port($graph, 'Spherecast1', 'spherecast', 0, 1, new Color(1.0, 0.0, 0.937));
-        $this->spherecastInput2 = new Port($graph, 'Spherecast2', 'spherecast', 0, 1, new Color(1.0, 0.0, 0.937));
-        $this->spherecastInput3 = new Port($graph, 'Spherecast3', 'spherecast', 0, 1, new Color(1.0, 0.0, 0.937));
-        $this->raycastHitOutput1 = new Port($graph, 'RaycastHit1', 'raycasthit', 1, 0, new Color(0.0, 0.451, 1.0));
-        $this->raycastHitOutput2 = new Port($graph, 'RaycastHit2', 'raycasthit', 1, 0, new Color(0.0, 0.451, 1.0));
-        $this->raycastHitOutput3 = new Port($graph, 'RaycastHit3', 'raycasthit', 1, 0, new Color(0.0, 0.451, 1.0));
+        $this->spherecastTopInput    = new Port($graph, 'Spherecast1', 'spherecast', 0, 1, new Color(1.0, 0.0, 0.937));
+        $this->spherecastMiddleInput = new Port($graph, 'Spherecast2', 'spherecast', 0, 1, new Color(1.0, 0.0, 0.937));
+        $this->spherecastBottomInput = new Port($graph, 'Spherecast3', 'spherecast', 0, 1, new Color(1.0, 0.0, 0.937));
+
+        $this->raycastHitTopOutput    = new Port($graph, 'RaycastHit1', 'raycasthit', 1, 0, new Color(0.0, 0.451, 1.0));
+        $this->raycastHitMiddleOutput = new Port($graph, 'RaycastHit2', 'raycasthit', 1, 0, new Color(0.0, 0.451, 1.0));
+        $this->raycastHitBottomOutput = new Port($graph, 'RaycastHit3', 'raycasthit', 1, 0, new Color(0.0, 0.451, 1.0));
+
         $this->propertiesInput  = new Port($graph, 'Properties1', 'properties', 0, 1, new Color(0.596, 0.596, 0.596));
 
-        // Add ports to the node
-        $this->addPort($this->spherecastInput1, new Vector2(-269.56, -20.0));
-        $this->addPort($this->spherecastInput3, new Vector2(-269.56, -122.0)); // Visual order
-        $this->addPort($this->spherecastInput2, new Vector2(-269.56, -224.0)); // Visual order
-        $this->addPort($this->raycastHitOutput2, new Vector2(40.0, -20.0));   // Visual order
-        $this->addPort($this->raycastHitOutput1, new Vector2(40.0, -122.0));  // Visual order
-        $this->addPort($this->raycastHitOutput3, new Vector2(40.0, -224.0));  // Visual order
+        // Discrepancy 2: Add ports in the correct visual order (top to bottom)
+        // Inputs (Left)
+        $this->addPort($this->spherecastTopInput, new Vector2(-269.56, -20.0));
+        $this->addPort($this->spherecastMiddleInput, new Vector2(-269.56, -122.0));
+        $this->addPort($this->spherecastBottomInput, new Vector2(-269.56, -224.0));
+        // Outputs (Right)
+        $this->addPort($this->raycastHitTopOutput, new Vector2(40.0, -20.0));
+        $this->addPort($this->raycastHitMiddleOutput, new Vector2(40.0, -122.0));
+        $this->addPort($this->raycastHitBottomOutput, new Vector2(40.0, -224.0));
+        // Input (Bottom)
         $this->addPort($this->propertiesInput, new Vector2(-129.4, -267.3));
 
         $graph->addNode($this);
@@ -48,29 +53,29 @@ class Kart extends Node
     {
         $port->connectTo($this->propertiesInput);
     }
-    public function connectSpherecast1(Port $port)
+    public function connectSpherecastTop(Port $port)
     {
-        $port->connectTo($this->spherecastInput1);
+        $port->connectTo($this->spherecastTopInput);
     }
-    public function connectSpherecast2(Port $port)
+    public function connectSpherecastMiddle(Port $port)
     {
-        $port->connectTo($this->spherecastInput2);
+        $port->connectTo($this->spherecastMiddleInput);
     }
-    public function connectSpherecast3(Port $port)
+    public function connectSpherecastBottom(Port $port)
     {
-        $port->connectTo($this->spherecastInput3);
+        $port->connectTo($this->spherecastBottomInput);
     }
 
-    public function getRaycastHit1(): Port
+    public function getRaycastHitTop(): Port
     {
-        return $this->raycastHitOutput1;
+        return $this->raycastHitTopOutput;
     }
-    public function getRaycastHit2(): Port
+    public function getRaycastHitMiddle(): Port
     {
-        return $this->raycastHitOutput2;
+        return $this->raycastHitMiddleOutput;
     }
-    public function getRaycastHit3(): Port
+    public function getRaycastHitBottom(): Port
     {
-        return $this->raycastHitOutput3;
+        return $this->raycastHitBottomOutput;
     }
 }
