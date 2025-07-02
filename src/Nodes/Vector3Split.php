@@ -39,6 +39,7 @@ class Vector3Split extends Node
     public function connectInput(Port $port)
     {
         $port->connectTo($this->input);
+        return $this;
     }
 
     public function getOutputX(): Port

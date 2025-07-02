@@ -38,11 +38,17 @@ class ConditionalSetFloat extends Node
     public function connectCondition(Port $port)
     {
         $port->connectTo($this->conditionInput);
+        return $this;
     }
 
+    /**
+     * Connects a source port to this node's float input.
+     * @param Port $port The source port providing the float value.
+     */
     public function connectFloat(Port $port)
     {
         $port->connectTo($this->floatInput);
+        return $this;
     }
 
     public function getOutput(): Port

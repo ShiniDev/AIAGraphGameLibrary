@@ -31,6 +31,7 @@ class Normalize extends Node
     public function connectInput(Port $port)
     {
         $port->connectTo($this->input);
+        return $this;
     }
 
     public function getOutput(): Port

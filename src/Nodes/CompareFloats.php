@@ -38,11 +38,17 @@ class CompareFloats extends Node
     public function connectInputA(Port $port)
     {
         $port->connectTo($this->inputA);
+        return $this;
     }
 
+    /**
+     * Connects a source port to this node's second float input.
+     * @param Port $port The source port providing the float value.
+     */
     public function connectInputB(Port $port)
     {
         $port->connectTo($this->inputB);
+        return $this;
     }
 
     public function getOutput(): Port

@@ -33,8 +33,9 @@ class Debug extends Node
      * Connects any source port to this Debug node's input.
      * @param Port $port The source port to connect from.
      */
-    public function connect(Port $port)
+    public function connectInput(Port $port)
     {
         $port->connectTo($this->input);
+        return $this;
     }
 }

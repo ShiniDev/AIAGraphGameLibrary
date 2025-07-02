@@ -40,14 +40,17 @@ class ConstructVector3 extends Node
     public function connectX(Port $port)
     {
         $port->connectTo($this->inputX);
+        return $this;
     }
     public function connectY(Port $port)
     {
         $port->connectTo($this->inputY);
+        return $this;
     }
     public function connectZ(Port $port)
     {
         $port->connectTo($this->inputZ);
+        return $this;
     }
 
     public function getOutput(): Port

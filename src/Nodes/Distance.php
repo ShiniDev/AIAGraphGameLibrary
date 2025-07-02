@@ -35,11 +35,17 @@ class Distance extends Node
     public function connectInputA(Port $port)
     {
         $port->connectTo($this->inputA);
+        return $this;
     }
 
+    /**
+     * Connects a source port to this node's second Vector3 input.
+     * @param Port $port The source port providing the Vector3 value.
+     */
     public function connectInputB(Port $port)
     {
         $port->connectTo($this->inputB);
+        return $this;
     }
 
     public function getOutput(): Port

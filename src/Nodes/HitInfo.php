@@ -34,9 +34,10 @@ class HitInfo extends Node
         $graph->addNode($this);
     }
 
-    public function connectInput(Port $port)
+    public function connectRaycastHit(Port $port)
     {
         $port->connectTo($this->raycastHitInput);
+        return $this;
     }
 
     public function getDistanceOutput(): Port

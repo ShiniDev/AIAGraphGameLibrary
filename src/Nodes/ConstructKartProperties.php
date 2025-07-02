@@ -47,26 +47,57 @@ class ConstructKartProperties extends Node
     public function connectCountry(Port $port)
     {
         $port->connectTo($this->countryInput);
+        return $this;
     }
+
+    /**
+     * Connects a source port to this node's name input.
+     * @param Port $port The source port providing the string value.
+     */
     public function connectName(Port $port)
     {
         $port->connectTo($this->nameInput);
+        return $this;
     }
+
+    /**
+     * Connects a source port to this node's color input.
+     * @param Port $port The source port providing the Color value.
+     */
     public function connectColor(Port $port)
     {
         $port->connectTo($this->colorInput);
+        return $this;
     }
+
+    /**
+     * Connects a source port to this node's top speed input.
+     * @param Port $port The source port providing the float value.
+     */
     public function connectTopSpeed(Port $port)
     {
         $port->connectTo($this->topSpeedInput);
+        return $this;
     }
+
+    /**
+     * Connects a source port to this node's acceleration input.
+     * @param Port $port The source port providing the float value.
+     */
     public function connectAcceleration(Port $port)
     {
         $port->connectTo($this->accelerationInput);
+        return $this;
     }
+
+    /**
+     * Connects a source port to this node's turning input.
+     * @param Port $port The source port providing the float value.
+     */
     public function connectTurning(Port $port)
     {
         $port->connectTo($this->turningInput);
+        return $this;
     }
 
     public function getOutput(): Port

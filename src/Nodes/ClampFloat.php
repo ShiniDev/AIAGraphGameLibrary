@@ -41,24 +41,27 @@ class ClampFloat extends Node
     public function connectMin(Port $port)
     {
         $port->connectTo($this->minInput);
+        return $this;
     }
 
     /**
-     * Connects a source port to the Max input of this node.
+     * Connects a source port to this node's max input.
      * @param Port $port The source port providing the float value.
      */
     public function connectMax(Port $port)
     {
         $port->connectTo($this->maxInput);
+        return $this;
     }
 
     /**
-     * Connects a source port to the Value input of this node.
+     * Connects a source port to this node's value input.
      * @param Port $port The source port providing the float value.
      */
     public function connectValue(Port $port)
     {
         $port->connectTo($this->valueInput);
+        return $this;
     }
 
     /**

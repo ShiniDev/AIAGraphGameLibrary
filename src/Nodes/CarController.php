@@ -35,14 +35,16 @@ class CarController extends Node
     public function connectAcceleration(Port $port)
     {
         $port->connectTo($this->accelerationInput);
+        return $this;
     }
 
     /**
-     * Connects a source port to the steering input.
+     * Connects a source port to this node's steering input.
      * @param Port $port The source port providing the float value.
      */
     public function connectSteering(Port $port)
     {
         $port->connectTo($this->steeringInput);
+        return $this;
     }
 }

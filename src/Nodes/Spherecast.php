@@ -35,11 +35,17 @@ class Spherecast extends Node
     public function connectRadius(Port $port)
     {
         $port->connectTo($this->radiusInput);
+        return $this;
     }
 
+    /**
+     * Connects a source port to this node's distance input.
+     * @param Port $port The source port providing the float value.
+     */
     public function connectDistance(Port $port)
     {
         $port->connectTo($this->distanceInput);
+        return $this;
     }
 
     public function getOutput(): Port

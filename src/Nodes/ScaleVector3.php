@@ -35,11 +35,17 @@ class ScaleVector3 extends Node
     public function connectScale(Port $port)
     {
         $port->connectTo($this->scaleInput);
+        return $this;
     }
 
+    /**
+     * Connects a source port to this node's Vector3 input.
+     * @param Port $port The source port providing the Vector3 value.
+     */
     public function connectVector(Port $port)
     {
         $port->connectTo($this->vectorInput);
+        return $this;
     }
 
     public function getOutput(): Port

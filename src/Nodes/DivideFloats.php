@@ -37,11 +37,17 @@ class DivideFloats extends Node
     public function connectDividend(Port $port)
     {
         $port->connectTo($this->dividendInput);
+        return $this;
     }
 
+    /**
+     * Connects a source port to this node's divisor input.
+     * @param Port $port The source port providing the float value.
+     */
     public function connectDivisor(Port $port)
     {
         $port->connectTo($this->divisorInput);
+        return $this;
     }
 
     public function getOutput(): Port
