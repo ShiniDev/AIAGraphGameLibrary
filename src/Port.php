@@ -11,6 +11,8 @@ class Port implements \JsonSerializable
 {
     use SerializableIdentity;
 
+    public const INPUT = 0;
+    public const OUTPUT = 1;
     public string $id;
     public string $sID;
     public ?Vector2 $localPosition = null; // Storing local position directly on the port.

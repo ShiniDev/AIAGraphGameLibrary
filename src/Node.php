@@ -2,6 +2,7 @@
 
 namespace GraphLib;
 
+use GraphLib\Exceptions\DuplicatePortTypeException;
 use GraphLib\Traits\SerializableIdentity;
 
 /**
@@ -56,6 +57,12 @@ class Node implements \JsonSerializable
      */
     public function addPort(Port $port, Vector2 $portLocalPosition): self
     {
+        foreach ($this->serializablePorts as $existingPort) {
+            if ($existingPort->id === $port->id && $existingPort->polarity === $port->polarity) {
+                // Or handle the error in another way that suits your application
+                throw new DuplicatePortTypeException("Cannot add port: A port with the ID '{$port->id}' and the same polarity already exists on this node.");
+            }
+        }
         $port->setNodeInfo($this->sID, $this->instanceID);
         $port->setLocalPosition($portLocalPosition); // Store local position on the port itself
         $this->serializablePorts[] = $port;
@@ -90,10 +97,10 @@ class Node implements \JsonSerializable
      * @param string $portId The ID of the port to retrieve.
      * @return Port|null The Port instance if found, otherwise null.
      */
-    public function getPort(string $portId): ?Port
+    public function getPort(string $portId, int $polarity): ?Port
     {
         foreach ($this->serializablePorts as $port) {
-            if ($port->id === $portId) {
+            if ($port->id === $portId && $port->polarity === $polarity) {
                 return $port;
             }
         }
@@ -121,7 +128,7 @@ class Node implements \JsonSerializable
             'outlineSelectedColor' => $this->outlineSelectedColor,
             'outlineHoverColor' => $this->outlineHoverColor,
             'serializablePorts' => $this->serializablePorts,
-            'instanceID' => $this->instanceID,
+            // 'instanceID' => $this->instanceID,
         ];
     }
 }
