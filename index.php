@@ -1,14 +1,22 @@
 <?php
 
 use GraphLib\Graph;
-use GraphLib\Nodes\CarController;
-use GraphLib\Nodes\NodeFloat;
 
 require_once 'vendor/autoload.php';
 
 $graph = new Graph();
-$carController = new CarController($graph);
-$acceleration = new NodeFloat($graph, 1);
-$carController->connectAcceleration($acceleration);
-$carController->connectSteering($acceleration);
+
+const TOP_SPEED = 10;
+const ACCELERATION = 5;
+const TURNING = 5;
+
+$kart = $graph->initializeKart(
+    "ShiniDev",
+    "Philippines",
+    "Yellow",
+    TOP_SPEED,
+    ACCELERATION,
+    TURNING
+);
+
 $graph->toTxt();

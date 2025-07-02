@@ -5,6 +5,8 @@ namespace GraphLib;
 use GraphLib\Exceptions\IncompatiblePortTypeException;
 use GraphLib\Exceptions\IncompatiblePolarityException;
 use GraphLib\Exceptions\MaxConnectionsExceededException;
+use GraphLib\Nodes\Kart;
+use GraphLib\Traits\NodeFactory;
 
 /**
  * Represents a graph containing nodes and connections, and provides methods for graph manipulation,
@@ -12,6 +14,7 @@ use GraphLib\Exceptions\MaxConnectionsExceededException;
  */
 class Graph implements \JsonSerializable
 {
+    use NodeFactory;
     /**
      * @var Node[] An array of serializable nodes in the graph.
      */
@@ -29,6 +32,11 @@ class Graph implements \JsonSerializable
      * @var array Internal cache for faster port lookups by sID.
      */
     private array $portRegistry = [];
+
+    public function __construct()
+    {
+        $this->graph = $this;
+    }
 
     /**
      * Creates a new Node, adds it to the graph, and returns it.
@@ -313,5 +321,34 @@ class Graph implements \JsonSerializable
     public function toTxt()
     {
         file_put_contents(time() . '_kart_graphlib.txt', $this->toJson());
+    }
+
+    public function initializeKart(string $name, string $country, string $color, float $topSpeed, float $acceleration, float $turning): Kart
+    {
+        // 1. Create the main nodes
+        $kart = $this->createKart();
+        $kartProperties = $this->createConstructKartProperties();
+
+        // 2. Create the "constant" value nodes from the parameters
+        $nameNode         = $this->createString($name);
+        $countryNode      = $this->createCountry($country);
+        $colorNode        = $this->createColor($color);
+        $topSpeedNode     = $this->createStat($topSpeed);
+        $accelerationNode = $this->createStat($acceleration);
+        $turningNode      = $this->createStat($turning);
+
+        // 3. Connect the constant nodes to the properties constructor
+        $kartProperties->connectName($nameNode->getOutput());
+        $kartProperties->connectCountry($countryNode->getOutput());
+        $kartProperties->connectColor($colorNode->getOutput());
+        $kartProperties->connectTopSpeed($topSpeedNode->getOutput());
+        $kartProperties->connectAcceleration($accelerationNode->getOutput());
+        $kartProperties->connectTurning($turningNode->getOutput());
+
+        // 4. Connect the properties to the main Kart node
+        $kart->connectProperties($kartProperties->getOutput());
+
+        // 5. Return the created Kart so it can be used further
+        return $kart;
     }
 }
