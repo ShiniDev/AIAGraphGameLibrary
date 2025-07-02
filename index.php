@@ -1,17 +1,14 @@
 <?php
 
+use GraphLib\Graph;
+use GraphLib\Nodes\CarController;
+use GraphLib\Nodes\NodeFloat;
+
 require_once 'vendor/autoload.php';
 
-use GraphLib\Graph;
-use GraphLib\NodeFactory;
-
 $graph = new Graph();
-$factory = new NodeFactory($graph);
-
-$stat = $factory->createStat(5);
-$debug = $factory->createDebug();
-
-$stat->getPort('Stat1')->connectTo($debug->getPort('Any1'));
-
-
+$carController = new CarController($graph);
+$acceleration = new NodeFloat($graph, 1);
+$carController->connectAcceleration($acceleration);
+$carController->connectSteering($acceleration);
 $graph->toTxt();

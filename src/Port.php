@@ -32,7 +32,7 @@ class Port implements \JsonSerializable
     /**
      * @var Graph Reference to the graph this port belongs to.
      */
-    private Graph $graph;
+    public Graph $graph;
 
     /**
      * Constructs a new Port instance.
