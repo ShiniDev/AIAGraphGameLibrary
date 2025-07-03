@@ -49,6 +49,13 @@ trait NodeFactory
     /** @var Graph The graph instance to add nodes to. */
     public Graph $graph;
 
+    /**
+     * @var NodeFloat[] A registry of float nodes created by this factory.
+     * This is used to avoid creating duplicate float nodes with the same value.
+     * The key is the float value as a string, and the value is the NodeFloat instance.
+     */
+    protected array $floatNodes = [];
+
     public function createAbsFloat(): AbsFloat
     {
         return new AbsFloat($this->graph);
@@ -135,7 +142,15 @@ trait NodeFactory
     }
     public function createFloat(float $val = 0.0): NodeFloat
     {
-        return new NodeFloat($this->graph, (string)$val);
+        // Check if a NodeFloat with the same value already exists
+        $key = (string)$val;
+        if (isset($this->floatNodes[$key])) {
+            return $this->floatNodes[$key];
+        } else {
+            // Create a new NodeFloat and store it in the registry
+            $this->floatNodes[$key] = new NodeFloat($this->graph, $key);
+            return $this->floatNodes[$key];
+        }
     }
     public function createString(string $val = ''): NodeString
     {

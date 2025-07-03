@@ -320,9 +320,16 @@ class Graph implements \JsonSerializable
      * Writes the JSON representation of the graph to a text file.
      * The filename will be a timestamp followed by '_kart_graphlib.txt'.
      */
-    public function toTxt()
+    public function toTxt(string $filename = ''): void
     {
-        file_put_contents(time() . '_kart_graphlib.txt', $this->toJson());
+        if ($filename === '') {
+            $filename = time() . '_kart_graphlib.txt';
+        }
+        // Add the .txt extension if not already present
+        if (pathinfo($filename, PATHINFO_EXTENSION) !== 'txt') {
+            $filename .= '.txt';
+        }
+        file_put_contents($filename, $this->toJson());
     }
 
     public function initializeKart(string $name, string $country, string $color, float $topSpeed, float $acceleration, float $turning): Kart
@@ -388,17 +395,33 @@ class Graph implements \JsonSerializable
         return $multiplyFloats->getOutput();
     }
 
+    public function getSubtractValue(Port $portTop, Port $portBottom): Port
+    {
+        $subtractFloats = $this->createSubtractFloats();
+        $subtractFloats->connectInputA($portTop);
+        $subtractFloats->connectInputB($portBottom);
+        return $subtractFloats->getOutput();
+    }
+
+    public function getDivideValue(Port $portTop, Port $portBottom): Port
+    {
+        $divideFloats = $this->createDivideFloats();
+        $divideFloats->connectInputA($portTop);
+        $divideFloats->connectInputB($portBottom);
+        return $divideFloats->getOutput();
+    }
+
     public function getNormalizedValue(float $min, float $max, Port $valueOutput): Port
     {
         $minFloat = $this->createFloat($min);
         $maxFloat = $this->createFloat($max);
         $numerator = $this->createSubtractFloats();
-        $numerator->connectDividend($valueOutput);
-        $numerator->connectDivisor($minFloat->getOutput());
+        $numerator->connectInputA($valueOutput);
+        $numerator->connectInputB($minFloat->getOutput());
 
         $denominator = $this->createSubtractFloats();
-        $denominator->connectDividend($maxFloat->getOutput());
-        $denominator->connectDivisor($minFloat->getOutput());
+        $denominator->connectInputA($maxFloat->getOutput());
+        $denominator->connectInputB($minFloat->getOutput());
 
         $division = $this->createDivideFloats();
         $division->connectInputA($numerator->getOutput())->connectInputB($denominator->getOutput());

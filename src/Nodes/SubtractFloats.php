@@ -26,20 +26,20 @@ class SubtractFloats extends Node
         $this->output = new Port($graph, 'Float1', 'float', 1, 0, new Color(0.867, 0.807, 0.0));
 
 
-        $this->addPort($this->inputB, new Vector2(-266.1, -84.2));
-        $this->addPort($this->inputA, new Vector2(-266.1, -130.0));
+        $this->addPort($this->inputB, new Vector2(-266.1, -130.0));
+        $this->addPort($this->inputA, new Vector2(-266.1, -84.2));
         $this->addPort($this->output, new Vector2(19.8, -84.2));
 
         $graph->addNode($this);
     }
 
-    public function connectDivisor(Port $port)
+    public function connectInputA(Port $port)
     {
         $port->connectTo($this->inputA);
         return $this;
     }
 
-    public function connectDividend(Port $port)
+    public function connectInputB(Port $port)
     {
         $port->connectTo($this->inputB);
         return $this;

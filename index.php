@@ -8,9 +8,9 @@ require_once 'vendor/autoload.php';
 
 $graph = new Graph();
 
-const TOP_SPEED = 10;
+const TOP_SPEED = 5;
 const ACCELERATION = 5;
-const TURNING = 5;
+const TURNING = 10;
 
 const KART_SIZE = .3;
 

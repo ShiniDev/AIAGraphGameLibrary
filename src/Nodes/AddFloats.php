@@ -28,8 +28,8 @@ class AddFloats extends Node
 
         // Add the ports to the node
         $this->addPort($this->output, new Vector2(19.8, -84.2));
-        $this->addPort($this->inputA, new Vector2(-266.1, -130.0));
         $this->addPort($this->inputB, new Vector2(-266.1, -84.2));
+        $this->addPort($this->inputA, new Vector2(-266.1, -130.0));
 
         $graph->addNode($this);
     }
