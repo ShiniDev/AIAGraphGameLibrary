@@ -21,28 +21,25 @@ class SubtractFloats extends Node
     {
         parent::__construct('SubtractFloats', $modifier);
 
-        $this->inputB = new Port($graph, 'Float1', 'float', 0, 1, new Color(0.867, 0.808, 0.0));
-        $this->inputA = new Port($graph, 'Float2', 'float', 0, 1, new Color(0.867, 0.808, 0.0));
+        $this->inputA = new Port($graph, 'Float1', 'float', 0, 1, new Color(0.867, 0.808, 0.0));
+        $this->inputB = new Port($graph, 'Float2', 'float', 0, 1, new Color(0.867, 0.808, 0.0));
         $this->output = new Port($graph, 'Float1', 'float', 1, 0, new Color(0.867, 0.807, 0.0));
 
-        $this->addPort($this->inputB, new Vector2(-266.1, -130.0));
-        $this->addPort($this->inputA, new Vector2(-266.1, -84.2));
+
+        $this->addPort($this->inputB, new Vector2(-266.1, -84.2));
+        $this->addPort($this->inputA, new Vector2(-266.1, -130.0));
         $this->addPort($this->output, new Vector2(19.8, -84.2));
 
         $graph->addNode($this);
     }
 
-    public function connectInputA(Port $port)
+    public function connectDivisor(Port $port)
     {
         $port->connectTo($this->inputA);
         return $this;
     }
 
-    /**
-     * Connects a source port to this node's second float input.
-     * @param Port $port The source port providing the float value.
-     */
-    public function connectInputB(Port $port)
+    public function connectDividend(Port $port)
     {
         $port->connectTo($this->inputB);
         return $this;

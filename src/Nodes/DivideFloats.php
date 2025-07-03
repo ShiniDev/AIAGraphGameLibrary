@@ -28,15 +28,15 @@ class DivideFloats extends Node
 
         // Add the ports to the node
         $this->addPort($this->output, new Vector2(19.8, -84.2));
-        $this->addPort($this->divisorInput, new Vector2(-266.1, -130.0));
         $this->addPort($this->dividendInput, new Vector2(-266.1, -84.2));
+        $this->addPort($this->divisorInput, new Vector2(-266.1, -130.0));
 
         $graph->addNode($this);
     }
 
-    public function connectDividend(Port $port)
+    public function connectInputA(Port $port)
     {
-        $port->connectTo($this->dividendInput);
+        $port->connectTo($this->divisorInput);
         return $this;
     }
 
@@ -44,9 +44,9 @@ class DivideFloats extends Node
      * Connects a source port to this node's divisor input.
      * @param Port $port The source port providing the float value.
      */
-    public function connectDivisor(Port $port)
+    public function connectInputB(Port $port)
     {
-        $port->connectTo($this->divisorInput);
+        $port->connectTo($this->dividendInput);
         return $this;
     }
 

@@ -5,6 +5,7 @@ namespace GraphLib;
 use GraphLib\Exceptions\IncompatiblePortTypeException;
 use GraphLib\Exceptions\IncompatiblePolarityException;
 use GraphLib\Exceptions\MaxConnectionsExceededException;
+use GraphLib\Nodes\ClampFloat;
 use GraphLib\Nodes\Kart;
 use GraphLib\Nodes\Spherecast;
 use GraphLib\Traits\NodeFactory;
@@ -363,9 +364,55 @@ class Graph implements \JsonSerializable
         return $sphereCast;
     }
 
+    public function initializeClampFloat(float $min, float $max): ClampFloat
+    {
+        $clamp = $this->createClampFloat();
+        $clamp->connectMin($this->createFloat($min)->getOutput());
+        $clamp->connectMax($this->createFloat($max)->getOutput());
+        return $clamp;
+    }
+
+    public function getAddValue(Port $portTop, Port $portBottom): Port
+    {
+        $addFloats = $this->createAddFloats();
+        $addFloats->connectInputA($portTop);
+        $addFloats->connectInputB($portBottom);
+        return $addFloats->getOutput();
+    }
+
+    public function getMultiplyValue(Port $portTop, Port $portBottom): Port
+    {
+        $multiplyFloats = $this->createMultiplyFloats();
+        $multiplyFloats->connectInputA($portTop);
+        $multiplyFloats->connectInputB($portBottom);
+        return $multiplyFloats->getOutput();
+    }
+
+    public function getNormalizedValue(float $min, float $max, Port $valueOutput): Port
+    {
+        $minFloat = $this->createFloat($min);
+        $maxFloat = $this->createFloat($max);
+        $numerator = $this->createSubtractFloats();
+        $numerator->connectDividend($valueOutput);
+        $numerator->connectDivisor($minFloat->getOutput());
+
+        $denominator = $this->createSubtractFloats();
+        $denominator->connectDividend($maxFloat->getOutput());
+        $denominator->connectDivisor($minFloat->getOutput());
+
+        $division = $this->createDivideFloats();
+        $division->connectInputA($numerator->getOutput())->connectInputB($denominator->getOutput());
+        $this->debug($division->getOutput());
+
+        $clamp = $this->initializeClampFloat(0.0, 1.0);
+        $clamp->connectValue($division->getOutput());
+        return $clamp->getOutput();
+    }
+
+
     public function debug(Port $port)
     {
         $debug = $this->createDebug();
-        $debug->connect($port);
+        $debug->connectInput($port);
     }
 }
