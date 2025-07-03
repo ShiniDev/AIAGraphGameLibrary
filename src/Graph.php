@@ -432,7 +432,6 @@ class Graph implements \JsonSerializable
         return $clamp->getOutput();
     }
 
-
     public function debug(Port $port)
     {
         $debug = $this->createDebug();
