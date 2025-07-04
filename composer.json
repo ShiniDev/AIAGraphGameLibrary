@@ -1,5 +1,5 @@
 {
-    "name": "haba/html",
+    "name": "shinidev/indie-dev-500-library",
     "type": "library",
     "autoload": {
         "psr-4": {

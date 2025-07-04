@@ -2,6 +2,9 @@
 
 namespace GraphLib;
 
+use GraphLib\Enums\BooleanOperator;
+use GraphLib\Enums\ConditionalBranch;
+use GraphLib\Enums\FloatOperator;
 use GraphLib\Exceptions\IncompatiblePortTypeException;
 use GraphLib\Exceptions\IncompatiblePolarityException;
 use GraphLib\Exceptions\MaxConnectionsExceededException;
@@ -371,12 +374,13 @@ class Graph implements \JsonSerializable
         return $sphereCast;
     }
 
-    public function initializeClampFloat(float $min, float $max): ClampFloat
+    public function getClampedValue(float $min, float $max, Port $value): Port
     {
         $clamp = $this->createClampFloat();
         $clamp->connectMin($this->createFloat($min)->getOutput());
         $clamp->connectMax($this->createFloat($max)->getOutput());
-        return $clamp;
+        $clamp->connectValue($value);
+        return $clamp->getOutput();
     }
 
     public function getAddValue(Port $portTop, Port $portBottom): Port
@@ -403,6 +407,34 @@ class Graph implements \JsonSerializable
         return $subtractFloats->getOutput();
     }
 
+    public function getFloat(float $float)
+    {
+        return $this->createFloat($float)->getOutput();
+    }
+
+    public function compareBool(BooleanOperator $op, Port $boolA, Port $boolB)
+    {
+        return $this->createCompareBool($op)
+            ->connectInputA($boolA)
+            ->connectInputB($boolB)
+            ->getOutput();
+    }
+    public function compareFloats(FloatOperator $op, Port $floatA, Port $floatB)
+    {
+        return $this->createCompareFloats($op)
+            ->connectInputA($floatA)
+            ->connectInputB($floatB)
+            ->getOutput();
+    }
+    public function setCondFloat(bool $cond, Port $condition, Port $float)
+    {
+        $cond = $cond ? ConditionalBranch::TRUE : ConditionalBranch::FALSE;
+        return $this->createConditionalSetFloat($cond)
+            ->connectCondition($condition)
+            ->connectFloat($float)
+            ->getOutput();
+    }
+
     public function getDivideValue(Port $portTop, Port $portBottom): Port
     {
         $divideFloats = $this->createDivideFloats();
@@ -425,16 +457,33 @@ class Graph implements \JsonSerializable
 
         $division = $this->createDivideFloats();
         $division->connectInputA($numerator->getOutput())->connectInputB($denominator->getOutput());
-        $this->debug($division->getOutput());
 
-        $clamp = $this->initializeClampFloat(0.0, 1.0);
-        $clamp->connectValue($division->getOutput());
-        return $clamp->getOutput();
+        return $division->getOutput();
+    }
+
+    public function getAbsValue(Port $valueOutput): Port
+    {
+        $abs = $this->createAbsFloat();
+        $abs->connectInput($valueOutput);
+        return $abs->getOutput();
     }
 
     public function debug(Port $port)
     {
         $debug = $this->createDebug();
         $debug->connectInput($port);
+    }
+
+    // If steering or throttle are infinite or NaN, free versions will get a white screen.
+    public function preventError(Port $value)
+    {
+        $value = $this->getClampedValue(-1, 1, $value);
+        $checkUpper = $this->compareFloats(FloatOperator::LESS_THAN_OR_EQUAL, $value, $this->getFloat(1));
+        $checkLower = $this->compareFloats(FloatOperator::GREATER_THAN_OR_EQUAL, $value, $this->getFloat(-1));
+        $check = $this->compareBool(BooleanOperator::AND, $checkUpper, $checkLower);
+        $preventError = $this->setCondFloat(false, $check, $this->getFloat(0));
+        $value = $this->setCondFloat(true, $check, $value);
+        $value = $this->getAddValue($value, $preventError);
+        return $value;
     }
 }
