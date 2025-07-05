@@ -21,6 +21,7 @@ const FORWARD_RAY_RADIUS = .3;
 const FORWARD_RAY_MAX_DISTANCE = 5;
 
 const BRAKING_POINT_DISTANCE = 2;
+const SIDE_BRAKING_DISTANCE = 1.5;
 const BRAKE_MULTIPLIER = .1;
 
 const STEERING_SENSITIVITY = 10;
@@ -71,32 +72,44 @@ $normalizedLeftDistance = $graph->getDivideValue($finalLeftDistance, $graph->get
 $normalizedRightDistance = $graph->getDivideValue($finalRightDistance, $graph->getFloat(SIDE_RAY_MAX_DISTANCE));
 $normalizedMiddleDistance = $graph->getDivideValue($finalMiddleDistance, $graph->getFloat(FORWARD_RAY_MAX_DISTANCE));
 
-// --- Proportional Braking Logic ---
-$isWithinBrakingZone = $graph->compareFloats(
-    FloatOperator::LESS_THAN,
-    $finalMiddleDistance,
-    $graph->getFloat(BRAKING_POINT_DISTANCE)
-);
-$brakeRatio = $graph->getDivideValue($finalMiddleDistance, $graph->getFloat(BRAKING_POINT_DISTANCE));
-$proportionalBrakeForce = $graph->getSubtractValue($graph->getFloat(1), $brakeRatio);
-$proportionalBrakeForce = $graph->getMultiplyValue($proportionalBrakeForce, $graph->getFloat(BRAKE_MULTIPLIER));
-$finalBrakeInput = $graph->setCondFloat(true, $isWithinBrakingZone, $proportionalBrakeForce);
+// --- Proportional Braking Logic (Refined) ---
+$isCloseToForwardWall = $graph->compareFloats(FloatOperator::LESS_THAN, $finalMiddleDistance, $graph->getFloat(BRAKING_POINT_DISTANCE));
+$isCloseToLeftWall = $graph->compareFloats(FloatOperator::LESS_THAN, $finalLeftDistance, $graph->getFloat(SIDE_BRAKING_DISTANCE));
+$isCloseToRightWall = $graph->compareFloats(FloatOperator::LESS_THAN, $finalRightDistance, $graph->getFloat(SIDE_BRAKING_DISTANCE));
+$isSideWallDangerouslyClose = $graph->compareBool(BooleanOperator::OR, $isCloseToLeftWall, $isCloseToRightWall);
+$shouldBrake = $graph->compareBool(BooleanOperator::OR, $isCloseToForwardWall, $isSideWallDangerouslyClose);
+
+// Calculate brake force based on forward distance
+$forwardBrakeRatio = $graph->getDivideValue($finalMiddleDistance, $graph->getFloat(BRAKING_POINT_DISTANCE));
+$forwardBrakeForce = $graph->getSubtractValue($graph->getFloat(1), $forwardBrakeRatio);
+
+// NEW: Calculate brake force based on side distance
+$isLeftShorter = $graph->compareFloats(FloatOperator::LESS_THAN, $finalLeftDistance, $finalRightDistance);
+$minSideDist = $graph->setCondFloat(true, $isLeftShorter, $finalLeftDistance);
+$minSideDistPart2 = $graph->setCondFloat(false, $isLeftShorter, $finalRightDistance);
+$minSideDist = $graph->getAddValue($minSideDist, $minSideDistPart2);
+$sideBrakeRatio = $graph->getDivideValue($minSideDist, $graph->getFloat(SIDE_BRAKING_DISTANCE));
+$sideBrakeForce = $graph->getSubtractValue($graph->getFloat(1), $sideBrakeRatio);
+
+// NEW: Choose the stronger of the two brake forces
+$isForwardBrakeStronger = $graph->compareFloats(FloatOperator::GREATER_THAN, $forwardBrakeForce, $sideBrakeForce);
+$strongestBrakeForce = $graph->setCondFloat(true, $isForwardBrakeStronger, $forwardBrakeForce);
+$strongestBrakeForcePart2 = $graph->setCondFloat(false, $isForwardBrakeStronger, $sideBrakeForce);
+$strongestBrakeForce = $graph->getAddValue($strongestBrakeForce, $strongestBrakeForcePart2);
+
+$proportionalBrakeForce = $graph->getMultiplyValue($strongestBrakeForce, $graph->getFloat(BRAKE_MULTIPLIER));
+$finalBrakeInput = $graph->setCondFloat(true, $shouldBrake, $proportionalBrakeForce);
 
 // --- Steering & Throttle Calculation ---
 $baseSteeringInput = $graph->getSubtractValue($normalizedRightDistance, $normalizedLeftDistance);
 
-// BUG FIX 1: Calculate absolute steering value to prevent accelerating on left turns.
 $isSteeringNegative = $graph->compareFloats(FloatOperator::LESS_THAN, $baseSteeringInput, $graph->getFloat(0));
 $invertedForAbs = $graph->getInverseValue($baseSteeringInput);
 $positivePortion = $graph->setCondFloat(true, $isSteeringNegative, $invertedForAbs);
 $nonNegativePortion = $graph->setCondFloat(false, $isSteeringNegative, $baseSteeringInput);
 $absoluteSteering = $graph->getAddValue($positivePortion, $nonNegativePortion);
 
-$throttleReduction = $graph->getMultiplyValue(
-    $absoluteSteering, // Use the absolute value here
-    $graph->getFloat(REDUCE_THROTTLE_STEERING)
-);
-
+$throttleReduction = $graph->getMultiplyValue($absoluteSteering, $graph->getFloat(REDUCE_THROTTLE_STEERING));
 $baseSteeringInput = $graph->getMultiplyValue($baseSteeringInput, $graph->getFloat(STEERING_SENSITIVITY));
 
 $baseThrottleInput = $normalizedMiddleDistance;
@@ -104,22 +117,16 @@ $normalThrottle = $graph->getSubtractValue($baseThrottleInput, $finalBrakeInput)
 $normalThrottle = $graph->getSubtractValue($normalThrottle, $throttleReduction);
 
 // --- Anti-Stuck & Reverse Logic ---
-$isThrottleOff = $graph->compareFloats(
-    FloatOperator::LESS_THAN_OR_EQUAL,
-    $normalThrottle, // Check against the normal throttle before reverse is applied
-    $graph->getFloat(0)
-);
+$isThrottleOff = $graph->compareFloats(FloatOperator::LESS_THAN_OR_EQUAL, $normalThrottle, $graph->getFloat(0));
 $areSidesHitting = $graph->compareBool(BooleanOperator::AND, $didLeftHit, $didRightHit);
 $isStuck = $graph->compareBool(BooleanOperator::AND, $isThrottleOff, $areSidesHitting);
 $graph->debug($isStuck);
 
-// Steering logic remains the same
 $reversedSteering = $graph->getInverseValue($baseSteeringInput);
 $steeringForUnstick = $graph->setCondFloat(true, $isStuck, $reversedSteering);
 $normalSteering = $graph->setCondFloat(false, $isStuck, $baseSteeringInput);
 $finalSteeringInput = $graph->getAddValue($normalSteering, $steeringForUnstick);
 
-// BUG FIX 2: Restructure final throttle calculation to prevent lurching.
 $throttleForDriving = $graph->setCondFloat(false, $isStuck, $normalThrottle);
 $throttleForReversing = $graph->setCondFloat(true, $isStuck, $graph->getFloat(-1));
 $finalThrottleInput = $graph->getAddValue($throttleForDriving, $throttleForReversing);
