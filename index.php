@@ -24,13 +24,18 @@ const BRAKING_POINT_DISTANCE = 4.0;
 const SIDE_BRAKING_DISTANCE = 2.5;
 const STUCK_FORWARD_DISTANCE = 0.5;
 const STUCK_SIDE_DISTANCE = 1.0;
-const STUCK_STEERING_THRESHOLD = 0.5; // NEW: How much the car needs to be steering to be considered "stuck".
+const STUCK_STEERING_THRESHOLD = 0.5;
 const BRAKE_MULTIPLIER = .1;
 
 const MIN_STEERING_SENSITIVITY = 4;
 const MAX_STEERING_SENSITIVITY = 10;
 const REDUCE_THROTTLE_STEERING = .8;
 const MIN_THROTTLE_SCALE = 0.2;
+
+// NEW: Racing Line Configuration
+const TURN_SETUP_DISTANCE = 3.5;      // How far ahead the forward ray must be to start setting up.
+const TURN_SETUP_DIFFERENCE = 0.3;    // How much shorter one side ray must be to detect a turn.
+const STEERING_OFFSET_AMOUNT = 0.7;   // How much to steer towards the outside wall.
 
 // --- Initialization ---
 $kart = $graph->initializeKart(
@@ -103,7 +108,23 @@ $proportionalBrakeForce = $graph->getMultiplyValue($strongestBrakeForce, $graph-
 $finalBrakeInput = $graph->setCondFloat(true, $shouldBrake, $proportionalBrakeForce);
 
 // --- Steering & Throttle Calculation ---
-$baseSteeringInput = $graph->getSubtractValue($normalizedRightDistance, $normalizedLeftDistance);
+$centerSeekingSteer = $graph->getSubtractValue($normalizedRightDistance, $normalizedLeftDistance);
+
+// NEW: Racing Line Steering Logic
+$isForwardPathClear = $graph->compareFloats(FloatOperator::GREATER_THAN, $finalMiddleDistance, $graph->getFloat(TURN_SETUP_DISTANCE));
+$sideDistanceDifference = $graph->getSubtractValue($normalizedLeftDistance, $normalizedRightDistance);
+
+$isRightTurnAhead = $graph->compareFloats(FloatOperator::GREATER_THAN, $sideDistanceDifference, $graph->getFloat(TURN_SETUP_DIFFERENCE));
+$isLeftTurnAhead = $graph->compareFloats(FloatOperator::LESS_THAN, $sideDistanceDifference, $graph->getFloat(-TURN_SETUP_DIFFERENCE));
+
+$shouldSetupForRightTurn = $graph->compareBool(BooleanOperator::AND, $isForwardPathClear, $isRightTurnAhead);
+$shouldSetupForLeftTurn = $graph->compareBool(BooleanOperator::AND, $isForwardPathClear, $isLeftTurnAhead);
+
+$rightTurnOffset = $graph->setCondFloat(true, $shouldSetupForRightTurn, $graph->getFloat(-STEERING_OFFSET_AMOUNT));
+$leftTurnOffset = $graph->setCondFloat(true, $shouldSetupForLeftTurn, $graph->getFloat(STEERING_OFFSET_AMOUNT));
+$racingLineOffset = $graph->getAddValue($rightTurnOffset, $leftTurnOffset);
+
+$baseSteeringInput = $graph->getAddValue($centerSeekingSteer, $racingLineOffset);
 
 $sensitivityRange = $graph->getSubtractValue($graph->getFloat(MIN_STEERING_SENSITIVITY), $graph->getFloat(MAX_STEERING_SENSITIVITY));
 $dynamicSensitivityPart = $graph->getMultiplyValue($normalizedMiddleDistance, $sensitivityRange);
@@ -111,7 +132,6 @@ $dynamicSensitivity = $graph->getAddValue($dynamicSensitivityPart, $graph->getFl
 
 $finalSteeringValue = $graph->getMultiplyValue($baseSteeringInput, $dynamicSensitivity);
 
-// FIX: Clamp the throttle reduction to prevent it from going below zero and causing stalls.
 $isSteeringNegative = $graph->compareFloats(FloatOperator::LESS_THAN, $finalSteeringValue, $graph->getFloat(0));
 $invertedForAbs = $graph->getInverseValue($finalSteeringValue);
 $positivePortion = $graph->setCondFloat(true, $isSteeringNegative, $invertedForAbs);
@@ -135,7 +155,6 @@ $scaledThrottle = $graph->getMultiplyValue($baseThrottleInput, $finalThrottleSca
 $normalThrottle = $graph->getSubtractValue($scaledThrottle, $finalBrakeInput);
 
 // --- Anti-Stuck & Reverse Logic ---
-// FIX: Overhauled "stuck" logic to be much more robust.
 $isFacingWall = $graph->compareFloats(FloatOperator::LESS_THAN, $finalMiddleDistance, $graph->getFloat(STUCK_FORWARD_DISTANCE));
 $isLeftWallStuck = $graph->compareFloats(FloatOperator::LESS_THAN, $finalLeftDistance, $graph->getFloat(STUCK_SIDE_DISTANCE));
 $isRightWallStuck = $graph->compareFloats(FloatOperator::LESS_THAN, $finalRightDistance, $graph->getFloat(STUCK_SIDE_DISTANCE));
