@@ -20,17 +20,17 @@ const SIDE_RAY_MAX_DISTANCE = 7;
 const FORWARD_RAY_RADIUS = .3;
 const FORWARD_RAY_MAX_DISTANCE = 5;
 
-// FIX: Adjusted constants to be more appropriate for a kart of size ~2.
-const BRAKING_POINT_DISTANCE = 4.0; // Increased to 2x kart size
-const SIDE_BRAKING_DISTANCE = 2.5;  // Increased to > 1x kart size
-const STUCK_FORWARD_DISTANCE = 0.5; // A very short distance to confirm the car is nose-first into a wall.
-const STUCK_SIDE_DISTANCE = 1.0;    // NEW: Distance for side rays to confirm the car is wedged.
+const BRAKING_POINT_DISTANCE = 4.0;
+const SIDE_BRAKING_DISTANCE = 2.5;
+const STUCK_FORWARD_DISTANCE = 0.5;
+const STUCK_SIDE_DISTANCE = 1.0;
+const STUCK_STEERING_THRESHOLD = 0.5; // NEW: How much the car needs to be steering to be considered "stuck".
 const BRAKE_MULTIPLIER = .1;
 
 const MIN_STEERING_SENSITIVITY = 4;
 const MAX_STEERING_SENSITIVITY = 10;
 const REDUCE_THROTTLE_STEERING = .8;
-const MIN_THROTTLE_SCALE = 0.2;     // NEW: A floor to prevent the car from stalling in turns.
+const MIN_THROTTLE_SCALE = 0.2;
 
 // --- Initialization ---
 $kart = $graph->initializeKart(
@@ -109,38 +109,46 @@ $sensitivityRange = $graph->getSubtractValue($graph->getFloat(MIN_STEERING_SENSI
 $dynamicSensitivityPart = $graph->getMultiplyValue($normalizedMiddleDistance, $sensitivityRange);
 $dynamicSensitivity = $graph->getAddValue($dynamicSensitivityPart, $graph->getFloat(MAX_STEERING_SENSITIVITY));
 
-$baseSteeringInput = $graph->getMultiplyValue($baseSteeringInput, $dynamicSensitivity);
+$finalSteeringValue = $graph->getMultiplyValue($baseSteeringInput, $dynamicSensitivity);
 
-// FIX: Add a floor to the throttle reduction scale to prevent stalling.
-$isSteeringNegative = $graph->compareFloats(FloatOperator::LESS_THAN, $baseSteeringInput, $graph->getFloat(0));
-$invertedForAbs = $graph->getInverseValue($baseSteeringInput);
+// FIX: Clamp the throttle reduction to prevent it from going below zero and causing stalls.
+$isSteeringNegative = $graph->compareFloats(FloatOperator::LESS_THAN, $finalSteeringValue, $graph->getFloat(0));
+$invertedForAbs = $graph->getInverseValue($finalSteeringValue);
 $positivePortion = $graph->setCondFloat(true, $isSteeringNegative, $invertedForAbs);
-$nonNegativePortion = $graph->setCondFloat(false, $isSteeringNegative, $baseSteeringInput);
+$nonNegativePortion = $graph->setCondFloat(false, $isSteeringNegative, $finalSteeringValue);
 $absoluteSteering = $graph->getAddValue($positivePortion, $nonNegativePortion);
-$throttleReductionAmount = $graph->getMultiplyValue($absoluteSteering, $graph->getFloat(REDUCE_THROTTLE_STEERING));
-$throttleScaleFactor = $graph->getSubtractValue($graph->getFloat(1), $throttleReductionAmount);
 
+$throttleReductionAmount = $graph->getMultiplyValue($absoluteSteering, $graph->getFloat(REDUCE_THROTTLE_STEERING));
+$isReductionNegative = $graph->compareFloats(FloatOperator::LESS_THAN, $throttleReductionAmount, $graph->getFloat(0));
+$clampedReduction = $graph->setCondFloat(true, $isReductionNegative, $graph->getFloat(0));
+$normalReduction = $graph->setCondFloat(false, $isReductionNegative, $throttleReductionAmount);
+$finalThrottleReduction = $graph->getAddValue($clampedReduction, $normalReduction);
+
+$throttleScaleFactor = $graph->getSubtractValue($graph->getFloat(1), $finalThrottleReduction);
 $isScaleTooLow = $graph->compareFloats(FloatOperator::LESS_THAN, $throttleScaleFactor, $graph->getFloat(MIN_THROTTLE_SCALE));
 $flooredScale = $graph->setCondFloat(true, $isScaleTooLow, $graph->getFloat(MIN_THROTTLE_SCALE));
 $normalScale = $graph->setCondFloat(false, $isScaleTooLow, $throttleScaleFactor);
 $finalThrottleScale = $graph->getAddValue($flooredScale, $normalScale);
 
 $baseThrottleInput = $normalizedMiddleDistance;
-$scaledThrottle = $graph->getMultiplyValue($baseThrottleInput, $finalThrottleScale); // Apply the final, floored scaling
-$normalThrottle = $graph->getSubtractValue($scaledThrottle, $finalBrakeInput); // Then subtract brake force
+$scaledThrottle = $graph->getMultiplyValue($baseThrottleInput, $finalThrottleScale);
+$normalThrottle = $graph->getSubtractValue($scaledThrottle, $finalBrakeInput);
 
 // --- Anti-Stuck & Reverse Logic ---
-// FIX: Redefine "stuck" to be based on physical proximity on ALL THREE rays, not just hit detection.
+// FIX: Overhauled "stuck" logic to be much more robust.
 $isFacingWall = $graph->compareFloats(FloatOperator::LESS_THAN, $finalMiddleDistance, $graph->getFloat(STUCK_FORWARD_DISTANCE));
 $isLeftWallStuck = $graph->compareFloats(FloatOperator::LESS_THAN, $finalLeftDistance, $graph->getFloat(STUCK_SIDE_DISTANCE));
 $isRightWallStuck = $graph->compareFloats(FloatOperator::LESS_THAN, $finalRightDistance, $graph->getFloat(STUCK_SIDE_DISTANCE));
 $areSidesStuck = $graph->compareBool(BooleanOperator::AND, $isLeftWallStuck, $isRightWallStuck);
-$isStuck = $graph->compareBool(BooleanOperator::AND, $isFacingWall, $areSidesStuck);
+$isPhysicallyWedged = $graph->compareBool(BooleanOperator::AND, $isFacingWall, $areSidesStuck);
+
+$isTryingToSteer = $graph->compareFloats(FloatOperator::GREATER_THAN, $absoluteSteering, $graph->getFloat(STUCK_STEERING_THRESHOLD));
+$isStuck = $graph->compareBool(BooleanOperator::AND, $isPhysicallyWedged, $isTryingToSteer);
 $graph->debug($isStuck);
 
-$reversedSteering = $graph->getInverseValue($baseSteeringInput);
+$reversedSteering = $graph->getInverseValue($finalSteeringValue);
 $steeringForUnstick = $graph->setCondFloat(true, $isStuck, $reversedSteering);
-$normalSteering = $graph->setCondFloat(false, $isStuck, $baseSteeringInput);
+$normalSteering = $graph->setCondFloat(false, $isStuck, $finalSteeringValue);
 $finalSteeringInput = $graph->getAddValue($normalSteering, $steeringForUnstick);
 
 $throttleForDriving = $graph->setCondFloat(false, $isStuck, $normalThrottle);
