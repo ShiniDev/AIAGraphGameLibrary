@@ -2,6 +2,8 @@
 
 This library provides a PHP-based graph system for defining game logic, particularly useful for visual scripting or node-based game mechanics. It allows for the programmatic creation of nodes, ports, and connections which can be serialized to JSON.
 
+Made with the assistance of Google's Gemini AI.
+
 ## Quick Start
 
 The `Graph` class itself serves as the main entry point for building a script. By using the `NodeFactory` trait, it provides a fluent API for creating and connecting nodes.
