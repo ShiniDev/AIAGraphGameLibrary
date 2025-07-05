@@ -468,6 +468,14 @@ class Graph implements \JsonSerializable
         return $abs->getOutput();
     }
 
+    public function getInverseValue(Port $valueOutput): Port
+    {
+        return $this->getMultiplyValue(
+            $valueOutput,
+            $this->getFloat(-1)
+        );
+    }
+
     public function debug(Port $port)
     {
         $debug = $this->createDebug();
