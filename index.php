@@ -9,22 +9,24 @@ require_once 'vendor/autoload.php';
 
 $graph = new Graph();
 
-const STAT_TOPSPEED = 8;
+// --- Car & AI Configuration ---
+const STAT_TOPSPEED = 10;
 const STAT_ACCELERATION = 4;
-const STAT_HANDLING = 8;
+const STAT_HANDLING = 10;
 
-const LEFTRIGHT_SPHERE_RADIUS = .3;
-const LEFTRIGHT_SPHERE_DISTANCE = 10;
+const SIDE_RAY_RADIUS = .5;
+const SIDE_RAY_MAX_DISTANCE = 7;
 
-const MIDDLE_SPHERE_RADIUS = .3;
-const MIDDLE_SPHERE_DISTANCE = 10;
+const FORWARD_RAY_RADIUS = .3;
+const FORWARD_RAY_MAX_DISTANCE = 5;
 
-const BRAKING_POINT_DISTANCE = 1.2;
-const BRAKE_MULTIPLIER = .75;
+const BRAKING_POINT_DISTANCE = 2;
+const BRAKE_MULTIPLIER = .1;
 
-const STEERING_SENSITIVITY = 5;
-const REDUCE_THROTTLE_STEERING = .5;
+const STEERING_SENSITIVITY = 10;
+const REDUCE_THROTTLE_STEERING = .8;
 
+// --- Initialization ---
 $kart = $graph->initializeKart(
     'ShiniDev',
     'Philippines',
@@ -34,59 +36,98 @@ $kart = $graph->initializeKart(
     STAT_HANDLING
 );
 
-$leftRightSphere = $graph->initializeSphereCast(LEFTRIGHT_SPHERE_RADIUS, LEFTRIGHT_SPHERE_DISTANCE)->getOutput();
-$middleSphere = $graph->initializeSphereCast(MIDDLE_SPHERE_RADIUS, MIDDLE_SPHERE_DISTANCE)->getOutput();
+$sideRaycastConfig = $graph->initializeSphereCast(SIDE_RAY_RADIUS, SIDE_RAY_MAX_DISTANCE)->getOutput();
+$forwardRaycastConfig = $graph->initializeSphereCast(FORWARD_RAY_RADIUS, FORWARD_RAY_MAX_DISTANCE)->getOutput();
 
-$kart->connectSpherecastBottom($leftRightSphere);
-$kart->connectSpherecastTop($leftRightSphere);
-$kart->connectSpherecastMiddle($middleSphere);
+$kart->connectSpherecastBottom($sideRaycastConfig);
+$kart->connectSpherecastTop($sideRaycastConfig);
+$kart->connectSpherecastMiddle($forwardRaycastConfig);
 
-$leftRaycast = $graph->createHitInfo()->connectRaycastHit($kart->getRaycastHitTop());
-$rightRaycast = $graph->createHitInfo()->connectRaycastHit($kart->getRaycastHitBottom());
-$middleRaycast = $graph->createHitInfo()->connectRaycastHit($kart->getRaycastHitMiddle());
+$leftHitInfo = $graph->createHitInfo()->connectRaycastHit($kart->getRaycastHitTop());
+$rightHitInfo = $graph->createHitInfo()->connectRaycastHit($kart->getRaycastHitBottom());
+$middleHitInfo = $graph->createHitInfo()->connectRaycastHit($kart->getRaycastHitMiddle());
 
-$isBrake = $graph->createCompareFloats(FloatOperator::LESS_THAN)
-    ->connectInputA($middleRaycast->getDistanceOutput())
-    ->connectInputB($graph->createFloat(BRAKING_POINT_DISTANCE)->getOutput())
-    ->getOutput();
+// --- Process Raycast Data ---
+$rawLeftDistance = $leftHitInfo->getDistanceOutput();
+$didLeftHit = $leftHitInfo->getHitOutput();
+$rawRightDistance = $rightHitInfo->getDistanceOutput();
+$didRightHit = $rightHitInfo->getHitOutput();
+$rawMiddleDistance = $middleHitInfo->getDistanceOutput();
+$didMiddleHit = $middleHitInfo->getHitOutput();
 
-$brakeInput = $graph->getNormalizedValue(-.2, MIDDLE_SPHERE_DISTANCE, $middleRaycast->getDistanceOutput());
-$brakeInput = $graph->getMultiplyValue($brakeInput, $graph->createFloat(BRAKE_MULTIPLIER)->getOutput());
+$leftDistanceIfHit = $graph->setCondFloat(true, $didLeftHit, $rawLeftDistance);
+$leftDistanceIfNotHit = $graph->setCondFloat(false, $didLeftHit, $graph->getFloat(SIDE_RAY_MAX_DISTANCE));
+$finalLeftDistance = $graph->getAddValue($leftDistanceIfHit, $leftDistanceIfNotHit);
 
-$brakeThrottle = $graph->createConditionalSetFloat(ConditionalBranch::TRUE)
-    ->connectCondition($isBrake)
-    ->connectFloat($brakeInput)
-    ->getOutput();
+$rightDistanceIfHit = $graph->setCondFloat(true, $didRightHit, $rawRightDistance);
+$rightDistanceIfNotHit = $graph->setCondFloat(false, $didRightHit, $graph->getFloat(SIDE_RAY_MAX_DISTANCE));
+$finalRightDistance = $graph->getAddValue($rightDistanceIfHit, $rightDistanceIfNotHit);
 
-$fullThrottle = $graph->createConditionalSetFloat(ConditionalBranch::FALSE)
-    ->connectCondition($isBrake)
-    ->connectFloat($graph->createFloat(1)->getOutput())
-    ->getOutput();
+$middleDistanceIfHit = $graph->setCondFloat(true, $didMiddleHit, $rawMiddleDistance);
+$middleDistanceIfNotHit = $graph->setCondFloat(false, $didMiddleHit, $graph->getFloat(FORWARD_RAY_MAX_DISTANCE));
+$finalMiddleDistance = $graph->getAddValue($middleDistanceIfHit, $middleDistanceIfNotHit);
 
-$throttle = $graph->getAddValue($brakeThrottle, $fullThrottle);
-$graph->debug($throttle);
+$normalizedLeftDistance = $graph->getDivideValue($finalLeftDistance, $graph->getFloat(SIDE_RAY_MAX_DISTANCE));
+$normalizedRightDistance = $graph->getDivideValue($finalRightDistance, $graph->getFloat(SIDE_RAY_MAX_DISTANCE));
+$normalizedMiddleDistance = $graph->getDivideValue($finalMiddleDistance, $graph->getFloat(FORWARD_RAY_MAX_DISTANCE));
 
-$leftSteer = $graph->getNormalizedValue(0, LEFTRIGHT_SPHERE_DISTANCE, $leftRaycast->getDistanceOutput());
-$rightSteer = $graph->getNormalizedValue(0, LEFTRIGHT_SPHERE_DISTANCE, $rightRaycast->getDistanceOutput());
-$leftSteer = $graph->getMultiplyValue($leftSteer, $graph->createFloat(-1)->getOutput());
+// --- Proportional Braking Logic ---
+$isWithinBrakingZone = $graph->compareFloats(
+    FloatOperator::LESS_THAN,
+    $finalMiddleDistance,
+    $graph->getFloat(BRAKING_POINT_DISTANCE)
+);
+$brakeRatio = $graph->getDivideValue($finalMiddleDistance, $graph->getFloat(BRAKING_POINT_DISTANCE));
+$proportionalBrakeForce = $graph->getSubtractValue($graph->getFloat(1), $brakeRatio);
+$proportionalBrakeForce = $graph->getMultiplyValue($proportionalBrakeForce, $graph->getFloat(BRAKE_MULTIPLIER));
+$finalBrakeInput = $graph->setCondFloat(true, $isWithinBrakingZone, $proportionalBrakeForce);
 
-$steering = $graph->getAddValue($leftSteer, $rightSteer);
+// --- Steering & Throttle Calculation ---
+$baseSteeringInput = $graph->getSubtractValue($normalizedRightDistance, $normalizedLeftDistance);
 
-$baseSteering = $graph->getAddValue($steering, $graph->getFloat(0));
-$steering = $graph->getMultiplyValue($steering, $graph->createFloat(STEERING_SENSITIVITY)->getOutput());
-$baseSteering = $graph->getClampedValue(-1, 1, $baseSteering);
+$throttleReduction = $graph->getMultiplyValue(
+    $baseSteeringInput,
+    $graph->getFloat(REDUCE_THROTTLE_STEERING)
+);
 
+$baseSteeringInput = $graph->getMultiplyValue($baseSteeringInput, $graph->getFloat(STEERING_SENSITIVITY));
 
-$throttleReductionAmount = $graph->getMultiplyValue($baseSteering, $graph->getFloat(REDUCE_THROTTLE_STEERING));
-$throttleReductionAmount = $graph->getAbsValue($throttleReductionAmount);
+$baseThrottleInput = $normalizedMiddleDistance;
+$finalThrottleInput = $graph->getSubtractValue($baseThrottleInput, $finalBrakeInput);
+$finalThrottleInput = $graph->getSubtractValue($finalThrottleInput, $throttleReduction);
 
-$throttle = $graph->getSubtractValue($throttle, $throttleReductionAmount);
+// --- Anti-Stuck & Reverse Logic ---
+$isThrottleOff = $graph->compareFloats(
+    FloatOperator::LESS_THAN_OR_EQUAL,
+    $finalThrottleInput,
+    $graph->getFloat(0)
+);
+$areSidesHitting = $graph->compareBool(BooleanOperator::AND, $didLeftHit, $didRightHit);
+$isStuck = $graph->compareBool(BooleanOperator::AND, $isThrottleOff, $areSidesHitting);
+$graph->debug($isStuck);
 
+$reversedSteering = $graph->getInverseValue($baseSteeringInput);
+$steeringForUnstick = $graph->setCondFloat(true, $isStuck, $reversedSteering);
+$normalSteering = $graph->setCondFloat(false, $isStuck, $baseSteeringInput);
+$finalSteeringInput = $graph->getAddValue($normalSteering, $steeringForUnstick);
 
-$graph->debug($throttle);
-$graph->debug($steering);
+$reverseUnstuck = $graph->setCondFloat(
+    true,
+    $isStuck,
+    $graph->getFloat(-1)
+);
+
+$finalThrottleInput = $graph->setCondFloat(
+    false,
+    $isStuck,
+    $finalThrottleInput
+);
+$finalThrottleInput = $graph->getAddValue($finalThrottleInput, $reverseUnstuck);
+
+// --- Apply Controls ---
 $controller = $graph->createCarController();
-$controller->connectAcceleration($graph->preventError($throttle));
-$controller->connectSteering($graph->preventError($steering));
+$controller->connectAcceleration($finalThrottleInput);
+$controller->connectSteering($finalSteeringInput);
 
-$graph->toTxt('shinidev.txt');
+// Save the resulting graph
+$graph->toTxt('C:\Users\Haba\Downloads\IndieDev500_v0_8\AIComp_Data\Saves\shinidev.txt');
