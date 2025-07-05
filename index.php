@@ -24,7 +24,8 @@ const BRAKING_POINT_DISTANCE = 2;
 const SIDE_BRAKING_DISTANCE = 1.5;
 const BRAKE_MULTIPLIER = .1;
 
-const STEERING_SENSITIVITY = 10;
+const MIN_STEERING_SENSITIVITY = 4; // NEW: Lower sensitivity for high speeds
+const MAX_STEERING_SENSITIVITY = 10; // NEW: Higher sensitivity for low speeds
 const REDUCE_THROTTLE_STEERING = .8;
 
 // --- Initialization ---
@@ -72,18 +73,16 @@ $normalizedLeftDistance = $graph->getDivideValue($finalLeftDistance, $graph->get
 $normalizedRightDistance = $graph->getDivideValue($finalRightDistance, $graph->getFloat(SIDE_RAY_MAX_DISTANCE));
 $normalizedMiddleDistance = $graph->getDivideValue($finalMiddleDistance, $graph->getFloat(FORWARD_RAY_MAX_DISTANCE));
 
-// --- Proportional Braking Logic (Refined) ---
+// --- Proportional Braking Logic ---
 $isCloseToForwardWall = $graph->compareFloats(FloatOperator::LESS_THAN, $finalMiddleDistance, $graph->getFloat(BRAKING_POINT_DISTANCE));
 $isCloseToLeftWall = $graph->compareFloats(FloatOperator::LESS_THAN, $finalLeftDistance, $graph->getFloat(SIDE_BRAKING_DISTANCE));
 $isCloseToRightWall = $graph->compareFloats(FloatOperator::LESS_THAN, $finalRightDistance, $graph->getFloat(SIDE_BRAKING_DISTANCE));
 $isSideWallDangerouslyClose = $graph->compareBool(BooleanOperator::OR, $isCloseToLeftWall, $isCloseToRightWall);
 $shouldBrake = $graph->compareBool(BooleanOperator::OR, $isCloseToForwardWall, $isSideWallDangerouslyClose);
 
-// Calculate brake force based on forward distance
 $forwardBrakeRatio = $graph->getDivideValue($finalMiddleDistance, $graph->getFloat(BRAKING_POINT_DISTANCE));
 $forwardBrakeForce = $graph->getSubtractValue($graph->getFloat(1), $forwardBrakeRatio);
 
-// NEW: Calculate brake force based on side distance
 $isLeftShorter = $graph->compareFloats(FloatOperator::LESS_THAN, $finalLeftDistance, $finalRightDistance);
 $minSideDist = $graph->setCondFloat(true, $isLeftShorter, $finalLeftDistance);
 $minSideDistPart2 = $graph->setCondFloat(false, $isLeftShorter, $finalRightDistance);
@@ -91,7 +90,6 @@ $minSideDist = $graph->getAddValue($minSideDist, $minSideDistPart2);
 $sideBrakeRatio = $graph->getDivideValue($minSideDist, $graph->getFloat(SIDE_BRAKING_DISTANCE));
 $sideBrakeForce = $graph->getSubtractValue($graph->getFloat(1), $sideBrakeRatio);
 
-// NEW: Choose the stronger of the two brake forces
 $isForwardBrakeStronger = $graph->compareFloats(FloatOperator::GREATER_THAN, $forwardBrakeForce, $sideBrakeForce);
 $strongestBrakeForce = $graph->setCondFloat(true, $isForwardBrakeStronger, $forwardBrakeForce);
 $strongestBrakeForcePart2 = $graph->setCondFloat(false, $isForwardBrakeStronger, $sideBrakeForce);
@@ -103,6 +101,13 @@ $finalBrakeInput = $graph->setCondFloat(true, $shouldBrake, $proportionalBrakeFo
 // --- Steering & Throttle Calculation ---
 $baseSteeringInput = $graph->getSubtractValue($normalizedRightDistance, $normalizedLeftDistance);
 
+// NEW: Implement Dynamic Steering Sensitivity
+$sensitivityRange = $graph->getSubtractValue($graph->getFloat(MIN_STEERING_SENSITIVITY), $graph->getFloat(MAX_STEERING_SENSITIVITY));
+$dynamicSensitivityPart = $graph->getMultiplyValue($normalizedMiddleDistance, $sensitivityRange);
+$dynamicSensitivity = $graph->getAddValue($dynamicSensitivityPart, $graph->getFloat(MAX_STEERING_SENSITIVITY));
+
+$baseSteeringInput = $graph->getMultiplyValue($baseSteeringInput, $dynamicSensitivity); // Use the new dynamic value
+
 $isSteeringNegative = $graph->compareFloats(FloatOperator::LESS_THAN, $baseSteeringInput, $graph->getFloat(0));
 $invertedForAbs = $graph->getInverseValue($baseSteeringInput);
 $positivePortion = $graph->setCondFloat(true, $isSteeringNegative, $invertedForAbs);
@@ -110,7 +115,6 @@ $nonNegativePortion = $graph->setCondFloat(false, $isSteeringNegative, $baseStee
 $absoluteSteering = $graph->getAddValue($positivePortion, $nonNegativePortion);
 
 $throttleReduction = $graph->getMultiplyValue($absoluteSteering, $graph->getFloat(REDUCE_THROTTLE_STEERING));
-$baseSteeringInput = $graph->getMultiplyValue($baseSteeringInput, $graph->getFloat(STEERING_SENSITIVITY));
 
 $baseThrottleInput = $normalizedMiddleDistance;
 $normalThrottle = $graph->getSubtractValue($baseThrottleInput, $finalBrakeInput);
