@@ -22,10 +22,11 @@ const FORWARD_RAY_MAX_DISTANCE = 5;
 
 const BRAKING_POINT_DISTANCE = 2;
 const SIDE_BRAKING_DISTANCE = 1.5;
+const STUCK_FORWARD_DISTANCE = 1.0; // NEW: A very short distance to confirm the car is nose-first into a wall.
 const BRAKE_MULTIPLIER = .1;
 
-const MIN_STEERING_SENSITIVITY = 4; // NEW: Lower sensitivity for high speeds
-const MAX_STEERING_SENSITIVITY = 10; // NEW: Higher sensitivity for low speeds
+const MIN_STEERING_SENSITIVITY = 4;
+const MAX_STEERING_SENSITIVITY = 10;
 const REDUCE_THROTTLE_STEERING = .8;
 
 // --- Initialization ---
@@ -101,29 +102,30 @@ $finalBrakeInput = $graph->setCondFloat(true, $shouldBrake, $proportionalBrakeFo
 // --- Steering & Throttle Calculation ---
 $baseSteeringInput = $graph->getSubtractValue($normalizedRightDistance, $normalizedLeftDistance);
 
-// NEW: Implement Dynamic Steering Sensitivity
 $sensitivityRange = $graph->getSubtractValue($graph->getFloat(MIN_STEERING_SENSITIVITY), $graph->getFloat(MAX_STEERING_SENSITIVITY));
 $dynamicSensitivityPart = $graph->getMultiplyValue($normalizedMiddleDistance, $sensitivityRange);
 $dynamicSensitivity = $graph->getAddValue($dynamicSensitivityPart, $graph->getFloat(MAX_STEERING_SENSITIVITY));
 
-$baseSteeringInput = $graph->getMultiplyValue($baseSteeringInput, $dynamicSensitivity); // Use the new dynamic value
+$baseSteeringInput = $graph->getMultiplyValue($baseSteeringInput, $dynamicSensitivity);
 
+// BUG FIX: Change throttle reduction to scale the throttle instead of subtracting from it.
 $isSteeringNegative = $graph->compareFloats(FloatOperator::LESS_THAN, $baseSteeringInput, $graph->getFloat(0));
 $invertedForAbs = $graph->getInverseValue($baseSteeringInput);
 $positivePortion = $graph->setCondFloat(true, $isSteeringNegative, $invertedForAbs);
 $nonNegativePortion = $graph->setCondFloat(false, $isSteeringNegative, $baseSteeringInput);
 $absoluteSteering = $graph->getAddValue($positivePortion, $nonNegativePortion);
-
-$throttleReduction = $graph->getMultiplyValue($absoluteSteering, $graph->getFloat(REDUCE_THROTTLE_STEERING));
+$throttleReductionAmount = $graph->getMultiplyValue($absoluteSteering, $graph->getFloat(REDUCE_THROTTLE_STEERING));
+$throttleScaleFactor = $graph->getSubtractValue($graph->getFloat(1), $throttleReductionAmount);
 
 $baseThrottleInput = $normalizedMiddleDistance;
-$normalThrottle = $graph->getSubtractValue($baseThrottleInput, $finalBrakeInput);
-$normalThrottle = $graph->getSubtractValue($normalThrottle, $throttleReduction);
+$scaledThrottle = $graph->getMultiplyValue($baseThrottleInput, $throttleScaleFactor); // Apply the scaling
+$normalThrottle = $graph->getSubtractValue($scaledThrottle, $finalBrakeInput); // Then subtract brake force
 
 // --- Anti-Stuck & Reverse Logic ---
-$isThrottleOff = $graph->compareFloats(FloatOperator::LESS_THAN_OR_EQUAL, $normalThrottle, $graph->getFloat(0));
+// BUG FIX: Redefine "stuck" to be based on physical proximity, not calculated throttle.
+$isFacingWall = $graph->compareFloats(FloatOperator::LESS_THAN, $finalMiddleDistance, $graph->getFloat(STUCK_FORWARD_DISTANCE));
 $areSidesHitting = $graph->compareBool(BooleanOperator::AND, $didLeftHit, $didRightHit);
-$isStuck = $graph->compareBool(BooleanOperator::AND, $isThrottleOff, $areSidesHitting);
+$isStuck = $graph->compareBool(BooleanOperator::AND, $isFacingWall, $areSidesHitting);
 $graph->debug($isStuck);
 
 $reversedSteering = $graph->getInverseValue($baseSteeringInput);
