@@ -36,8 +36,10 @@ const MIN_THROTTLE_SCALE = 0.2;
 const TURN_SETUP_DISTANCE = 3.5;
 const TURN_SETUP_DIFFERENCE = 0.3;
 const STEERING_OFFSET_AMOUNT = 0.7;
-const APEX_ENTRY_DISTANCE = 3.0;      // NEW: How close the inside wall must be to start turning in.
-const APEX_STEERING_FORCE = 1.0;      // NEW: How hard to steer towards the apex.
+const APEX_ENTRY_DISTANCE = 3.0;
+const APEX_STEERING_FORCE = 1.0;
+const APEX_EXIT_DISTANCE = 4.0;       // NEW: How close the *outside* wall must be to start exiting the turn.
+const APEX_EXIT_STEERING_FORCE = -0.5; // NEW: How much to steer back towards the outside.
 
 // --- Initialization ---
 $kart = $graph->initializeKart(
@@ -123,45 +125,60 @@ $shouldSetupForLeftTurn = $graph->compareBool(BooleanOperator::AND, $isForwardPa
 $rightTurnOffset = $graph->setCondFloat(true, $shouldSetupForRightTurn, $graph->getFloat(-STEERING_OFFSET_AMOUNT));
 $leftTurnOffset = $graph->setCondFloat(true, $shouldSetupForLeftTurn, $graph->getFloat(STEERING_OFFSET_AMOUNT));
 $racingLineOffset = $graph->getAddValue($rightTurnOffset, $leftTurnOffset);
-
 $setupSteering = $graph->getAddValue($centerSeekingSteer, $racingLineOffset);
 
-// NEW: Apex Targeting Logic
 $isReadyForRightApex = $graph->compareFloats(FloatOperator::LESS_THAN, $finalRightDistance, $graph->getFloat(APEX_ENTRY_DISTANCE));
 $shouldAimForApexRight = $graph->compareBool(BooleanOperator::AND, $shouldSetupForRightTurn, $isReadyForRightApex);
 $isReadyForLeftApex = $graph->compareFloats(FloatOperator::LESS_THAN, $finalLeftDistance, $graph->getFloat(APEX_ENTRY_DISTANCE));
 $shouldAimForApexLeft = $graph->compareBool(BooleanOperator::AND, $shouldSetupForLeftTurn, $isReadyForLeftApex);
-
 $isAimingForApex = $graph->compareBool(BooleanOperator::OR, $shouldAimForApexRight, $shouldAimForApexLeft);
+
+// NEW: Turn Exit Logic
+$isReadyToExitRightApex = $graph->compareFloats(FloatOperator::LESS_THAN, $finalLeftDistance, $graph->getFloat(APEX_EXIT_DISTANCE));
+$shouldExitRightApex = $graph->compareBool(BooleanOperator::AND, $shouldAimForApexRight, $isReadyToExitRightApex);
+$isReadyToExitLeftApex = $graph->compareFloats(FloatOperator::LESS_THAN, $finalRightDistance, $graph->getFloat(APEX_EXIT_DISTANCE));
+$shouldExitLeftApex = $graph->compareBool(BooleanOperator::AND, $shouldAimForApexLeft, $isReadyToExitLeftApex);
+$isExitingApex = $graph->compareBool(BooleanOperator::OR, $shouldExitRightApex, $shouldExitLeftApex);
+
+// Determine steering based on state: Setup -> Apex -> Exit
 $apexSteerForceRight = $graph->setCondFloat(true, $shouldAimForApexRight, $graph->getFloat(APEX_STEERING_FORCE));
 $apexSteerForceLeft = $graph->setCondFloat(true, $shouldAimForApexLeft, $graph->getFloat(-APEX_STEERING_FORCE));
 $apexSteering = $graph->getAddValue($apexSteerForceRight, $apexSteerForceLeft);
 
-$baseSteeringWhenAiming = $graph->setCondFloat(true, $isAimingForApex, $apexSteering);
-$baseSteeringWhenNotAiming = $graph->setCondFloat(false, $isAimingForApex, $setupSteering);
-$baseSteeringInput = $graph->getAddValue($baseSteeringWhenAiming, $baseSteeringWhenNotAiming);
+$exitSteeringRight = $graph->setCondFloat(true, $shouldExitRightApex, $graph->getFloat(APEX_EXIT_STEERING_FORCE));
+$exitSteeringLeft = $graph->setCondFloat(true, $shouldExitLeftApex, $graph->getFloat(-APEX_EXIT_STEERING_FORCE));
+$exitSteering = $graph->getAddValue($exitSteeringRight, $exitSteeringLeft);
 
-// FIX: Decouple throttle reduction from steering sensitivity.
+$steerForApex = $graph->setCondFloat(true, $isAimingForApex, $apexSteering);
+$steerForSetup = $graph->setCondFloat(false, $isAimingForApex, $setupSteering);
+$baseSteeringWithoutExit = $graph->getAddValue($steerForApex, $steerForSetup);
+
+$baseSteeringWhenExiting = $graph->setCondFloat(true, $isExitingApex, $exitSteering);
+$baseSteeringWhenNotExiting = $graph->setCondFloat(false, $isExitingApex, $baseSteeringWithoutExit);
+$baseSteeringInput = $graph->getAddValue($baseSteeringWhenExiting, $baseSteeringWhenNotExiting);
+
 $isBaseSteeringNegative = $graph->compareFloats(FloatOperator::LESS_THAN, $baseSteeringInput, $graph->getFloat(0));
 $invertedBaseForAbs = $graph->getInverseValue($baseSteeringInput);
 $positiveBasePortion = $graph->setCondFloat(true, $isBaseSteeringNegative, $invertedBaseForAbs);
 $nonNegativeBasePortion = $graph->setCondFloat(false, $isBaseSteeringNegative, $baseSteeringInput);
 $absoluteBaseSteering = $graph->getAddValue($positiveBasePortion, $nonNegativeBasePortion);
+
+// FIX: Clamp throttle reduction to prevent it from going above a threshold, fixing the "not starting" bug.
 $throttleReductionAmount = $graph->getMultiplyValue($absoluteBaseSteering, $graph->getFloat(REDUCE_THROTTLE_STEERING));
+$maxReduction = $graph->getSubtractValue($graph->getFloat(1.0), $graph->getFloat(MIN_THROTTLE_SCALE));
+$isReductionTooHigh = $graph->compareFloats(FloatOperator::GREATER_THAN, $throttleReductionAmount, $maxReduction);
+$clampedHighReduction = $graph->setCondFloat(true, $isReductionTooHigh, $maxReduction);
+$normalReduction = $graph->setCondFloat(false, $isReductionTooHigh, $throttleReductionAmount);
+$finalThrottleReduction = $graph->getAddValue($clampedHighReduction, $normalReduction);
 
 $sensitivityRange = $graph->getSubtractValue($graph->getFloat(MIN_STEERING_SENSITIVITY), $graph->getFloat(MAX_STEERING_SENSITIVITY));
 $dynamicSensitivityPart = $graph->getMultiplyValue($normalizedMiddleDistance, $sensitivityRange);
 $dynamicSensitivity = $graph->getAddValue($dynamicSensitivityPart, $graph->getFloat(MAX_STEERING_SENSITIVITY));
 $finalSteeringValue = $graph->getMultiplyValue($baseSteeringInput, $dynamicSensitivity);
 
-$throttleScaleFactor = $graph->getSubtractValue($graph->getFloat(1), $throttleReductionAmount);
-$isScaleTooLow = $graph->compareFloats(FloatOperator::LESS_THAN, $throttleScaleFactor, $graph->getFloat(MIN_THROTTLE_SCALE));
-$flooredScale = $graph->setCondFloat(true, $isScaleTooLow, $graph->getFloat(MIN_THROTTLE_SCALE));
-$normalScale = $graph->setCondFloat(false, $isScaleTooLow, $throttleScaleFactor);
-$finalThrottleScale = $graph->getAddValue($flooredScale, $normalScale);
-
+$throttleScaleFactor = $graph->getSubtractValue($graph->getFloat(1), $finalThrottleReduction);
 $baseThrottleInput = $normalizedMiddleDistance;
-$scaledThrottle = $graph->getMultiplyValue($baseThrottleInput, $finalThrottleScale);
+$scaledThrottle = $graph->getMultiplyValue($baseThrottleInput, $throttleScaleFactor);
 $normalThrottle = $graph->getSubtractValue($scaledThrottle, $finalBrakeInput);
 
 // --- Anti-Stuck & Reverse Logic ---
