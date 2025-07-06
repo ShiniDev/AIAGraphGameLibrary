@@ -11,18 +11,21 @@ require_once 'vendor/autoload.php';
 $graph = new Graph();
 
 // --- Car & AI Configuration ---
-const STAT_TOPSPEED = 10;
-const STAT_ACCELERATION = 8;
-const STAT_HANDLING = 10;
+// My driving style: Precise, high handling, and aware. I prioritize clean lines over top speed.
+const STAT_TOPSPEED = 9;        // A little less top-end speed for more control.
+const STAT_ACCELERATION = 9;    // Good acceleration is key for exiting turns cleanly.
+const STAT_HANDLING = 10;       // Maximum handling for precision steering.
 
+// Increased sensor range for better awareness and earlier decision making.
 const SIDE_RAY_RADIUS = .5;
-const SIDE_RAY_MAX_DISTANCE = 7;
+const SIDE_RAY_MAX_DISTANCE = 8;
 
 const FORWARD_RAY_RADIUS = .3;
-const FORWARD_RAY_MAX_DISTANCE = 5;
+const FORWARD_RAY_MAX_DISTANCE = 6;
 
-const BRAKING_POINT_DISTANCE = 4.0;
-const SIDE_BRAKING_DISTANCE = 2.5;
+// Cautious braking to ensure smooth corner entry.
+const BRAKING_POINT_DISTANCE = 4.5;
+const SIDE_BRAKING_DISTANCE = 2.8;
 const STUCK_FORWARD_DISTANCE = 0.5;
 const STUCK_SIDE_DISTANCE = 1.0;
 const STUCK_FORWARD_DISTANCE_MULTIPLIER = 0.5;
@@ -35,8 +38,9 @@ const BRAKING_POINT_DISTANCE_MULTIPLIER = 1.0;
 const TURN_SETUP_DISTANCE_MULTIPLIER = 0.1;
 const APEX_EXIT_STEERING_FORCE_MULTIPLIER = 0.5;
 
-const MIN_STEERING_SENSITIVITY = 4;
-const MAX_STEERING_SENSITIVITY = 10;
+// Fine-tuned steering for a balance of responsiveness and stability.
+const MIN_STEERING_SENSITIVITY = 5;
+const MAX_STEERING_SENSITIVITY = 9;
 const STEERING_SENSITIVITY_MID_POINT = 0.5;
 const STEERING_SENSITIVITY_MID_VALUE = 7;
 const MIN_THROTTLE_REDUCTION_STEERING = 0.1;
@@ -45,21 +49,23 @@ const STEERING_THROTTLE_REDUCTION_AGGRESSIVENESS = 1.5;
 const STEERING_THROTTLE_REDUCTION_MAX = 0.7;
 
 // Racing Line Configuration
-const TURN_SETUP_DISTANCE = 3.5;
+// Setting up for turns earlier to ensure the perfect line.
+const TURN_SETUP_DISTANCE = 4.0;
 const TURN_SETUP_DIFFERENCE = 0.3;
 const STEERING_OFFSET_AMOUNT = 0.7;
 const APEX_ENTRY_DISTANCE = 3.0;
 const APEX_STEERING_FORCE = 1.0;
 const APEX_STEERING_FORCE_SCALE = 0.5;
-const APEX_EXIT_DISTANCE = 4.0;       // NEW: How close the *outside* wall must be to start exiting the turn.
-const APEX_EXIT_STEERING_FORCE = -0.5; // NEW: How much to steer back towards the outside.
+const APEX_EXIT_DISTANCE = 4.0;
+const APEX_EXIT_STEERING_FORCE = -0.5;
 const APEX_EXIT_STEERING_FORCE_DISTANCE_MULTIPLIER = 0.5;
 
 // --- Initialization ---
+// This is me, Gemi! Ready to race.
 $kart = $graph->initializeKart(
-    'ShiniDev',
-    'Philippines',
-    'White',
+    'Gemi',
+    'USA',
+    'Blue',
     STAT_TOPSPEED,
     STAT_ACCELERATION,
     STAT_HANDLING
@@ -251,4 +257,4 @@ $controller->connectAcceleration($finalThrottleInput);
 $controller->connectSteering($finalSteeringInput);
 
 // Save the resulting graph
-$graph->toTxt('shinidev.txt');
+$graph->toTxt('C:\Users\Haba\Downloads\IndieDev500_v0_8\AIComp_Data\Saves\gemi.txt');
