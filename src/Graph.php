@@ -510,4 +510,23 @@ class Graph implements \JsonSerializable
         $value = $this->getAddValue($value, $preventError);
         return $value;
     }
+
+    public function createConditionalFloat(Port $condition, Port $ifTrue, Port $ifFalse): Port
+    {
+        $truePortion = $this->setCondFloat(true, $condition, $ifTrue);
+        $falsePortion = $this->setCondFloat(false, $condition, $ifFalse);
+        return $this->getAddValue($truePortion, $falsePortion);
+    }
+
+    public function getMinValue(Port $floatA, Port $floatB): Port
+    {
+        $isALess = $this->compareFloats(FloatOperator::LESS_THAN, $floatA, $floatB);
+        return $this->createConditionalFloat($isALess, $floatA, $floatB);
+    }
+
+    public function getMaxValue(Port $floatA, Port $floatB): Port
+    {
+        $isAGreater = $this->compareFloats(FloatOperator::GREATER_THAN, $floatA, $floatB);
+        return $this->createConditionalFloat($isAGreater, $floatA, $floatB);
+    }
 }
