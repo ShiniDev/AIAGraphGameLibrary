@@ -421,6 +421,7 @@ class Graph implements \JsonSerializable
             throw new \InvalidArgumentException("NOT operator requires only one input.");
         }
         if (BooleanOperator::NOT) {
+            return $this->getInverseBool($boolA);
         }
         return $this->createCompareBool($op)
             ->connectInputA($boolA)

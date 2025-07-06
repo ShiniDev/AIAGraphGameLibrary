@@ -14,4 +14,5 @@ enum BooleanOperator: int
     case NOR = 4;
     case NAND = 5;
     case XNOR = 6;
+    case NOT = 7;
 }
