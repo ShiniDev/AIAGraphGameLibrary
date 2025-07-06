@@ -412,8 +412,16 @@ class Graph implements \JsonSerializable
         return $this->createFloat($float)->getOutput();
     }
 
-    public function compareBool(BooleanOperator $op, Port $boolA, Port $boolB)
+    public function compareBool(BooleanOperator $op, Port $boolA, Port $boolB = null)
     {
+        if ($boolB === null && $op !== BooleanOperator::NOT) {
+            throw new \InvalidArgumentException("Boolean comparison requires two inputs unless using NOT operator.");
+        }
+        if (BooleanOperator::NOT === $op && $boolB !== null) {
+            throw new \InvalidArgumentException("NOT operator requires only one input.");
+        }
+        if (BooleanOperator::NOT) {
+        }
         return $this->createCompareBool($op)
             ->connectInputA($boolA)
             ->connectInputB($boolB)
