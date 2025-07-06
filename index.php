@@ -38,8 +38,9 @@ const TURN_SETUP_DIFFERENCE = 0.3;
 const STEERING_OFFSET_AMOUNT = 0.7;
 const APEX_ENTRY_DISTANCE = 3.0;
 const APEX_STEERING_FORCE = 1.0;
-const APEX_EXIT_DISTANCE = 4.0;       // NEW: How close the *outside* wall must be to start exiting the turn.
-const APEX_EXIT_STEERING_FORCE = -0.5; // NEW: How much to steer back towards the outside.
+const APEX_EXIT_DISTANCE = 4.0;
+const APEX_EXIT_STEERING_FORCE = -0.5;
+const RACING_LINE_PATH_CLEAR_DISTANCE = 4.0; // NEW: How far the path must be clear to attempt a racing line maneuver.
 
 // --- Initialization ---
 $kart = $graph->initializeKart(
@@ -114,48 +115,63 @@ $finalBrakeInput = $graph->setCondFloat(true, $shouldBrake, $proportionalBrakeFo
 // --- Steering & Throttle Calculation ---
 $centerSeekingSteer = $graph->getSubtractValue($normalizedRightDistance, $normalizedLeftDistance);
 
-// Racing Line Logic
-$isForwardPathClear = $graph->compareFloats(FloatOperator::GREATER_THAN, $finalMiddleDistance, $graph->getFloat(TURN_SETUP_DISTANCE));
+// --- REFACTORED: Racing Line State Machine ---
+// Conditions for detecting a turn ahead.
+$isForwardPathClearForSetup = $graph->compareFloats(FloatOperator::GREATER_THAN, $finalMiddleDistance, $graph->getFloat(TURN_SETUP_DISTANCE));
 $sideDistanceDifference = $graph->getSubtractValue($normalizedLeftDistance, $normalizedRightDistance);
-$isRightTurnAhead = $graph->compareFloats(FloatOperator::GREATER_THAN, $sideDistanceDifference, $graph->getFloat(TURN_SETUP_DIFFERENCE));
-$isLeftTurnAhead = $graph->compareFloats(FloatOperator::LESS_THAN, $sideDistanceDifference, $graph->getFloat(-TURN_SETUP_DIFFERENCE));
-$shouldSetupForRightTurn = $graph->compareBool(BooleanOperator::AND, $isForwardPathClear, $isRightTurnAhead);
-$shouldSetupForLeftTurn = $graph->compareBool(BooleanOperator::AND, $isForwardPathClear, $isLeftTurnAhead);
+$isRightTurnDetected = $graph->compareFloats(FloatOperator::GREATER_THAN, $sideDistanceDifference, $graph->getFloat(TURN_SETUP_DIFFERENCE));
+$isLeftTurnDetected = $graph->compareFloats(FloatOperator::LESS_THAN, $sideDistanceDifference, $graph->getFloat(-TURN_SETUP_DIFFERENCE));
+
+// FEATURE: Path-Clear Check. Only attempt a racing line if the path to the outside is clear.
+$isLeftPathClear = $graph->compareFloats(FloatOperator::GREATER_THAN, $finalLeftDistance, $graph->getFloat(RACING_LINE_PATH_CLEAR_DISTANCE));
+$isRightPathClear = $graph->compareFloats(FloatOperator::GREATER_THAN, $finalRightDistance, $graph->getFloat(RACING_LINE_PATH_CLEAR_DISTANCE));
+$canSetupForRightTurn = $graph->compareBool(BooleanOperator::AND, $isLeftPathClear, $isRightTurnDetected);
+$canSetupForLeftTurn = $graph->compareBool(BooleanOperator::AND, $isRightPathClear, $isLeftTurnDetected);
+
+$shouldSetupForRightTurn = $graph->compareBool(BooleanOperator::AND, $isForwardPathClearForSetup, $canSetupForRightTurn);
+$shouldSetupForLeftTurn = $graph->compareBool(BooleanOperator::AND, $isForwardPathClearForSetup, $canSetupForLeftTurn);
+
+// Determine the current state based on a priority system: Exit > Apex > Setup
+// 1. Exit State
+$isReadyToExitRightApex = $graph->compareFloats(FloatOperator::LESS_THAN, $finalLeftDistance, $graph->getFloat(APEX_EXIT_DISTANCE));
+$shouldExitRightApex = $graph->compareBool(BooleanOperator::AND, $shouldSetupForRightTurn, $isReadyToExitRightApex);
+$isReadyToExitLeftApex = $graph->compareFloats(FloatOperator::LESS_THAN, $finalRightDistance, $graph->getFloat(APEX_EXIT_DISTANCE));
+$shouldExitLeftApex = $graph->compareBool(BooleanOperator::AND, $shouldSetupForLeftTurn, $isReadyToExitLeftApex);
+$isExitingApex = $graph->compareBool(BooleanOperator::OR, $shouldExitRightApex, $shouldExitLeftApex);
+
+// 2. Apex State (only if not exiting)
+$isReadyForRightApex = $graph->compareFloats(FloatOperator::LESS_THAN, $finalRightDistance, $graph->getFloat(APEX_ENTRY_DISTANCE));
+$shouldAimForApexRight = $graph->compareBool(BooleanOperator::AND, $shouldSetupForRightTurn, $isReadyForRightApex);
+$isReadyForLeftApex = $graph->compareFloats(FloatOperator::LESS_THAN, $finalLeftDistance, $graph->getFloat(APEX_ENTRY_DISTANCE));
+$shouldAimForApexLeft = $graph->compareBool(BooleanOperator::AND, $shouldSetupForLeftTurn, $isReadyForLeftApex);
+$isAimingForApexRaw = $graph->compareBool(BooleanOperator::OR, $shouldAimForApexRight, $shouldAimForApexLeft);
+$isAimingForApex = $graph->compareBool(BooleanOperator::AND, $isAimingForApexRaw, $graph->getInverseBool($isExitingApex)); // FIX: Mutually exclusive state
+
+// 3. Setup State (only if not aiming for apex or exiting)
+$isSettingUp = $graph->compareBool(BooleanOperator::OR, $shouldSetupForRightTurn, $shouldSetupForLeftTurn);
+$isSettingUp = $graph->compareBool(BooleanOperator::AND, $isSettingUp, $graph->getInverseBool($isAimingForApex));
+$isSettingUp = $graph->compareBool(BooleanOperator::AND, $isSettingUp, $graph->getInverseBool($isExitingApex));
+
+// Calculate steering based on the current state
+$exitSteeringRight = $graph->setCondFloat(true, $shouldExitRightApex, $graph->getFloat(APEX_EXIT_STEERING_FORCE));
+$exitSteeringLeft = $graph->setCondFloat(true, $shouldExitLeftApex, $graph->getFloat(-APEX_EXIT_STEERING_FORCE));
+$exitSteering = $graph->getAddValue($exitSteeringRight, $exitSteeringLeft);
+
+$apexSteerForceRight = $graph->setCondFloat(true, $shouldAimForApexRight, $graph->getFloat(APEX_STEERING_FORCE));
+$apexSteerForceLeft = $graph->setCondFloat(true, $shouldAimForApexLeft, $graph->getFloat(-APEX_STEERING_FORCE));
+$apexSteering = $graph->getAddValue($apexSteerForceRight, $apexSteerForceLeft);
 
 $rightTurnOffset = $graph->setCondFloat(true, $shouldSetupForRightTurn, $graph->getFloat(-STEERING_OFFSET_AMOUNT));
 $leftTurnOffset = $graph->setCondFloat(true, $shouldSetupForLeftTurn, $graph->getFloat(STEERING_OFFSET_AMOUNT));
 $racingLineOffset = $graph->getAddValue($rightTurnOffset, $leftTurnOffset);
 $setupSteering = $graph->getAddValue($centerSeekingSteer, $racingLineOffset);
 
-$isReadyForRightApex = $graph->compareFloats(FloatOperator::LESS_THAN, $finalRightDistance, $graph->getFloat(APEX_ENTRY_DISTANCE));
-$shouldAimForApexRight = $graph->compareBool(BooleanOperator::AND, $shouldSetupForRightTurn, $isReadyForRightApex);
-$isReadyForLeftApex = $graph->compareFloats(FloatOperator::LESS_THAN, $finalLeftDistance, $graph->getFloat(APEX_ENTRY_DISTANCE));
-$shouldAimForApexLeft = $graph->compareBool(BooleanOperator::AND, $shouldSetupForLeftTurn, $isReadyForLeftApex);
-$isAimingForApex = $graph->compareBool(BooleanOperator::OR, $shouldAimForApexRight, $shouldAimForApexLeft);
-
-// NEW: Turn Exit Logic
-$isReadyToExitRightApex = $graph->compareFloats(FloatOperator::LESS_THAN, $finalLeftDistance, $graph->getFloat(APEX_EXIT_DISTANCE));
-$shouldExitRightApex = $graph->compareBool(BooleanOperator::AND, $shouldAimForApexRight, $isReadyToExitRightApex);
-$isReadyToExitLeftApex = $graph->compareFloats(FloatOperator::LESS_THAN, $finalRightDistance, $graph->getFloat(APEX_EXIT_DISTANCE));
-$shouldExitLeftApex = $graph->compareBool(BooleanOperator::AND, $shouldAimForApexLeft, $isReadyToExitLeftApex);
-$isExitingApex = $graph->compareBool(BooleanOperator::OR, $shouldExitRightApex, $shouldExitLeftApex);
-
-// Determine steering based on state: Setup -> Apex -> Exit
-$apexSteerForceRight = $graph->setCondFloat(true, $shouldAimForApexRight, $graph->getFloat(APEX_STEERING_FORCE));
-$apexSteerForceLeft = $graph->setCondFloat(true, $shouldAimForApexLeft, $graph->getFloat(-APEX_STEERING_FORCE));
-$apexSteering = $graph->getAddValue($apexSteerForceRight, $apexSteerForceLeft);
-
-$exitSteeringRight = $graph->setCondFloat(true, $shouldExitRightApex, $graph->getFloat(APEX_EXIT_STEERING_FORCE));
-$exitSteeringLeft = $graph->setCondFloat(true, $shouldExitLeftApex, $graph->getFloat(-APEX_EXIT_STEERING_FORCE));
-$exitSteering = $graph->getAddValue($exitSteeringRight, $exitSteeringLeft);
-
+$steerForExit = $graph->setCondFloat(true, $isExitingApex, $exitSteering);
 $steerForApex = $graph->setCondFloat(true, $isAimingForApex, $apexSteering);
-$steerForSetup = $graph->setCondFloat(false, $isAimingForApex, $setupSteering);
-$baseSteeringWithoutExit = $graph->getAddValue($steerForApex, $steerForSetup);
+$steerForSetup = $graph->setCondFloat(true, $isSettingUp, $setupSteering);
+$steerForCenter = $graph->setCondFloat(false, $graph->compareBool(BooleanOperator::OR, $isExitingApex, $graph->compareBool(BooleanOperator::OR, $isAimingForApex, $isSettingUp)), $centerSeekingSteer);
 
-$baseSteeringWhenExiting = $graph->setCondFloat(true, $isExitingApex, $exitSteering);
-$baseSteeringWhenNotExiting = $graph->setCondFloat(false, $isExitingApex, $baseSteeringWithoutExit);
-$baseSteeringInput = $graph->getAddValue($baseSteeringWhenExiting, $baseSteeringWhenNotExiting);
+$baseSteeringInput = $graph->getAddValue($steerForExit, $graph->getAddValue($steerForApex, $graph->getAddValue($steerForSetup, $steerForCenter)));
 
 $isBaseSteeringNegative = $graph->compareFloats(FloatOperator::LESS_THAN, $baseSteeringInput, $graph->getFloat(0));
 $invertedBaseForAbs = $graph->getInverseValue($baseSteeringInput);
@@ -163,7 +179,6 @@ $positiveBasePortion = $graph->setCondFloat(true, $isBaseSteeringNegative, $inve
 $nonNegativeBasePortion = $graph->setCondFloat(false, $isBaseSteeringNegative, $baseSteeringInput);
 $absoluteBaseSteering = $graph->getAddValue($positiveBasePortion, $nonNegativeBasePortion);
 
-// FIX: Clamp throttle reduction to prevent it from going above a threshold, fixing the "not starting" bug.
 $throttleReductionAmount = $graph->getMultiplyValue($absoluteBaseSteering, $graph->getFloat(REDUCE_THROTTLE_STEERING));
 $maxReduction = $graph->getSubtractValue($graph->getFloat(1.0), $graph->getFloat(MIN_THROTTLE_SCALE));
 $isReductionTooHigh = $graph->compareFloats(FloatOperator::GREATER_THAN, $throttleReductionAmount, $maxReduction);
