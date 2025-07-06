@@ -484,6 +484,13 @@ class Graph implements \JsonSerializable
         );
     }
 
+    public function getInverseBool(Port $boolOutput): Port
+    {
+        $inverse = $this->createNot();
+        $inverse->connectInput($boolOutput);
+        return $inverse->getOutput();
+    }
+
     public function debug(Port $port)
     {
         $debug = $this->createDebug();
