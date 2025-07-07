@@ -171,7 +171,7 @@ class Graph implements \JsonSerializable
      * @param int $offsetX The horizontal offset between nodes in the layout.
      * @param int $offsetY The vertical offset between nodes in the layout.
      */
-    public function autoLayout(int $offsetX = 400, int $offsetY = 220)
+    public function autoLayout(int $offsetX = 350, int $offsetY = 180)
     {
         if (empty($this->serializableNodes)) {
             return;
@@ -366,19 +366,19 @@ class Graph implements \JsonSerializable
 
     public function initializeSphereCast(float $radius, float $distance): Spherecast
     {
-        $radiusFloat = $this->createFloat($radius);
-        $distanceFloat = $this->createFloat($distance);
+        $radiusFloat = $this->getFloat($radius);
+        $distanceFloat = $this->getFloat($distance);
         $sphereCast = $this->createSpherecast();
-        $sphereCast->connectDistance($distanceFloat->getOutput());
-        $sphereCast->connectRadius($radiusFloat->getOutput());
+        $sphereCast->connectDistance($distanceFloat);
+        $sphereCast->connectRadius($radiusFloat);
         return $sphereCast;
     }
 
     public function getClampedValue(float $min, float $max, Port $value): Port
     {
         $clamp = $this->createClampFloat();
-        $clamp->connectMin($this->createFloat($min)->getOutput());
-        $clamp->connectMax($this->createFloat($max)->getOutput());
+        $clamp->connectMin($this->getFloat($min));
+        $clamp->connectMax($this->getFloat($max));
         $clamp->connectValue($value);
         return $clamp->getOutput();
     }
@@ -412,7 +412,7 @@ class Graph implements \JsonSerializable
         return $this->createFloat($float)->getOutput();
     }
 
-    public function compareBool(BooleanOperator $op, Port $boolA, Port $boolB = null)
+    public function compareBool(BooleanOperator $op, Port $boolA, ?Port $boolB = null)
     {
         if ($boolB === null && $op !== BooleanOperator::NOT) {
             throw new \InvalidArgumentException("Boolean comparison requires two inputs unless using NOT operator.");
@@ -454,15 +454,15 @@ class Graph implements \JsonSerializable
 
     public function getNormalizedValue(float $min, float $max, Port $valueOutput): Port
     {
-        $minFloat = $this->createFloat($min);
-        $maxFloat = $this->createFloat($max);
+        $minFloat = $this->getFloat($min);
+        $maxFloat = $this->getFloat($max);
         $numerator = $this->createSubtractFloats();
         $numerator->connectInputA($valueOutput);
-        $numerator->connectInputB($minFloat->getOutput());
+        $numerator->connectInputB($minFloat);
 
         $denominator = $this->createSubtractFloats();
-        $denominator->connectInputA($maxFloat->getOutput());
-        $denominator->connectInputB($minFloat->getOutput());
+        $denominator->connectInputA($maxFloat);
+        $denominator->connectInputB($minFloat);
 
         $division = $this->createDivideFloats();
         $division->connectInputA($numerator->getOutput())->connectInputB($denominator->getOutput());
@@ -492,10 +492,11 @@ class Graph implements \JsonSerializable
         return $inverse->getOutput();
     }
 
-    public function debug(Port $port)
+    public function debug(Port ...$ports)
     {
-        $debug = $this->createDebug();
-        $debug->connectInput($port);
+        foreach ($ports as $port) {
+            $this->createDebug()->connectInput($port);
+        }
     }
 
     // If steering or throttle are infinite or NaN, free versions will get a white screen.
@@ -511,7 +512,7 @@ class Graph implements \JsonSerializable
         return $value;
     }
 
-    public function createConditionalFloat(Port $condition, Port $ifTrue, Port $ifFalse): Port
+    public function getConditionalFloat(Port $condition, Port $ifTrue, Port $ifFalse): Port
     {
         $truePortion = $this->setCondFloat(true, $condition, $ifTrue);
         $falsePortion = $this->setCondFloat(false, $condition, $ifFalse);
@@ -521,12 +522,12 @@ class Graph implements \JsonSerializable
     public function getMinValue(Port $floatA, Port $floatB): Port
     {
         $isALess = $this->compareFloats(FloatOperator::LESS_THAN, $floatA, $floatB);
-        return $this->createConditionalFloat($isALess, $floatA, $floatB);
+        return $this->getConditionalFloat($isALess, $floatA, $floatB);
     }
 
     public function getMaxValue(Port $floatA, Port $floatB): Port
     {
         $isAGreater = $this->compareFloats(FloatOperator::GREATER_THAN, $floatA, $floatB);
-        return $this->createConditionalFloat($isAGreater, $floatA, $floatB);
+        return $this->getConditionalFloat($isAGreater, $floatA, $floatB);
     }
 }
