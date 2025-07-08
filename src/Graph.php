@@ -5,6 +5,7 @@ namespace GraphLib;
 use GraphLib\Enums\BooleanOperator;
 use GraphLib\Enums\ConditionalBranch;
 use GraphLib\Enums\FloatOperator;
+use GraphLib\Enums\GetKartVector3Modifier;
 use GraphLib\Exceptions\IncompatiblePortTypeException;
 use GraphLib\Exceptions\IncompatiblePolarityException;
 use GraphLib\Exceptions\MaxConnectionsExceededException;
@@ -920,5 +921,316 @@ class Graph implements \JsonSerializable
         $scaledNormal = $this->getScaleVector3($normal, $twoDot);
 
         return $this->getSubtractVector3($incidentVector, $scaledNormal);
+    }
+
+    /** Gets the kart's current world position vector. */
+    public function getKartPosition(): Port
+    {
+        return $this->createKartGetVector3(GetKartVector3Modifier::Self)->getOutput();
+    }
+
+    /** Gets the kart's current forward-facing unit vector. */
+    public function getKartForward(): Port
+    {
+        return $this->createKartGetVector3(GetKartVector3Modifier::SelfForward)->getOutput();
+    }
+
+    /** Gets the kart's current right-facing unit vector. */
+    public function getKartRight(): Port
+    {
+        return $this->createKartGetVector3(GetKartVector3Modifier::SelfRight)->getOutput();
+    }
+
+    /** Gets the kart's current backward-facing unit vector. */
+    public function getKartBackward(): Port
+    {
+        return $this->createKartGetVector3(GetKartVector3Modifier::SelfBackward)->getOutput();
+    }
+
+    /** Gets the kart's current left-facing unit vector. */
+    public function getKartLeft(): Port
+    {
+        return $this->createKartGetVector3(GetKartVector3Modifier::SelfLeft)->getOutput();
+    }
+
+    /** Gets the closest point on the upcoming waypoint's racing line. */
+    public function getClosestOnNextWaypoint(): Port
+    {
+        return $this->createKartGetVector3(GetKartVector3Modifier::ClosestOnNextWaypoint)->getOutput();
+    }
+
+    /** Gets the center of the upcoming waypoint volume. */
+    public function getCenterOfNextWaypoint(): Port
+    {
+        return $this->createKartGetVector3(GetKartVector3Modifier::CenterOfNextWaypoint)->getOutput();
+    }
+
+    /** Gets the closest point on the previous waypoint's racing line. */
+    public function getClosestOnLastWaypoint(): Port
+    {
+        return $this->createKartGetVector3(GetKartVector3Modifier::ClosestOnLastWaypoint)->getOutput();
+    }
+
+    /** Gets the center of the previous waypoint volume. */
+    public function getCenterOfLastWaypoint(): Port
+    {
+        return $this->createKartGetVector3(GetKartVector3Modifier::CenterOfLastWaypoint)->getOutput();
+    }
+
+    /**
+     * Calculates the normalized direction vector from a 'from' point to a 'to' point.
+     * This is extremely useful for finding the direction towards any target.
+     */
+    public function getDirection(Port $from, Port $to): Port
+    {
+        $directionVector = $this->getSubtractVector3($to, $from);
+        return $this->getNormalizedVector3($directionVector);
+    }
+
+    /**
+     * Inverts a vector by scaling it by -1.
+     * Useful for getting the opposite of a direction vector.
+     */
+    public function getInverseVector3(Port $vector): Port
+    {
+        return $this->getScaleVector3($vector, -1.0);
+    }
+
+    /**
+     * Calculates the signed distance from a point to a plane.
+     * The plane is defined by a point on the plane and its normal vector.
+     * The sign of the result indicates which side of the plane the point is on.
+     */
+    public function getSignedDistanceToPlane(Port $point, Port $planeNormal, Port $pointOnPlane): Port
+    {
+        $vecToPoint = $this->getSubtractVector3($point, $pointOnPlane);
+        $normPlaneNormal = $this->getNormalizedVector3($planeNormal);
+
+        // The dot product of the vector to the point and the plane's normal
+        // gives the perpendicular distance.
+        return $this->getDotProduct($vecToPoint, $normPlaneNormal);
+    }
+
+    /**
+     * Selects one of two vectors based on a boolean condition.
+     * If the condition is true, it returns 'ifTrue'; otherwise, it returns 'ifFalse'.
+     * @param Port $condition A boolean port for the condition.
+     * @param Port $ifTrue The Vector3 to return if the condition is true.
+     * @param Port $ifFalse The Vector3 to return if the condition is false.
+     * @return Port The output port representing the selected vector.
+     */
+    public function getConditionalVector3(Port $condition, Port $ifTrue, Port $ifFalse): Port
+    {
+        // Get a scaling factor of 1.0 for the true branch, 0.0 for the false.
+        $scaleFactorTrue = $this->getConditionalFloat($condition, 1.0, 0.0);
+
+        // Get a scaling factor of 0.0 for the true branch, 1.0 for the false.
+        $scaleFactorFalse = $this->getConditionalFloat($condition, 0.0, 1.0);
+
+        // Scale the vectors. One will become a zero vector, the other will be unchanged.
+        $truePortion = $this->getScaleVector3($ifTrue, $scaleFactorTrue);
+        $falsePortion = $this->getScaleVector3($ifFalse, $scaleFactorFalse);
+
+        // Add them together. (Vector + ZeroVector = Vector)
+        return $this->getAddVector3($truePortion, $falsePortion);
+    }
+
+    /**
+     * Moves a point a specified distance along a direction vector.
+     * @param Port $point The starting Vector3 position.
+     * @param Port $direction The Vector3 direction to move in.
+     * @param float|Port $distance The float distance to move.
+     * @return Port The new Vector3 position.
+     */
+    public function movePointAlongVector(Port $point, Port $direction, float|Port $distance): Port
+    {
+        // newPosition = startPoint + (normalizedDirection * distance)
+        $unitDirection = $this->getNormalizedVector3($direction);
+        $scaledVector = $this->getScaleVector3($unitDirection, $distance);
+
+        return $this->getAddVector3($point, $scaledVector);
+    }
+
+    /**
+     * Clamps the magnitude (length) of a vector to a maximum value.
+     * If the vector is longer than the max, it's scaled down; otherwise, it's unchanged.
+     * @param Port $vector The input Vector3.
+     * @param float|Port $maxMagnitude The maximum float length allowed.
+     * @return Port The clamped Vector3.
+     */
+    public function clampVectorMagnitude(Port $vector, float|Port $maxMagnitude): Port
+    {
+        $currentMag = $this->getMagnitude($vector);
+
+        // Condition: Is the current magnitude greater than the max?
+        $isOverMax = $this->compareFloats(FloatOperator::GREATER_THAN, $currentMag, $maxMagnitude);
+
+        // If the vector is too long, create a clamped version.
+        $unitVector = $this->getNormalizedVector3($vector);
+        $clampedVector = $this->getScaleVector3($unitVector, $maxMagnitude);
+
+        // Use our conditional helper to select the correct vector.
+        return $this->getConditionalVector3($isOverMax, $clampedVector, $vector);
+    }
+
+    /**
+     * Rotates a vector around an axis by a specified angle.
+     * Implements Rodrigues' rotation formula.
+     * @param Port $vector The Vector3 to rotate.
+     * @param Port $axis The Vector3 axis of rotation (should be normalized).
+     * @param float|Port $angle The float angle of rotation in radians.
+     * @return Port The rotated Vector3.
+     */
+    public function rotateVectorAroundAxis(Port $vector, Port $axis, float|Port $angle): Port
+    {
+        $k = $this->getNormalizedVector3($axis); // The normalized axis of rotation
+        $v = $vector; // The vector to rotate
+        $theta = $angle; // The angle in radians
+
+        $cosTheta = $this->getCosValue($theta);
+        $sinTheta = $this->getSinValue($theta);
+
+        // Rodrigues' formula has three parts:
+        // Part 1: v * cos(theta)
+        $part1 = $this->getScaleVector3($v, $cosTheta);
+
+        // Part 2: (k x v) * sin(theta)
+        $cross_kv = $this->getCrossProduct($k, $v);
+        $part2 = $this->getScaleVector3($cross_kv, $sinTheta);
+
+        // Part 3: k * (k · v) * (1 - cos(theta))
+        $dot_kv = $this->getDotProduct($k, $v);
+        $one_minus_cos = $this->getSubtractValue(1.0, $cosTheta);
+        $scaleFactor = $this->getMultiplyValue($dot_kv, $one_minus_cos);
+        $part3 = $this->getScaleVector3($k, $scaleFactor);
+
+        // Final result: Part1 + Part2 + Part3
+        return $this->getAddVector3($this->getAddVector3($part1, $part2), $part3);
+    }
+
+    /**
+     * Calculates the alignment of two vectors, returning their dot product after normalization.
+     * The result is a float from -1 (opposite) to 1 (aligned).
+     * @param Port $a The first Vector3.
+     * @param Port $b The second Vector3.
+     * @return Port A float port representing the alignment value.
+     */
+    public function getAlignmentValue(Port $a, Port $b): Port
+    {
+        $normA = $this->getNormalizedVector3($a);
+        $normB = $this->getNormalizedVector3($b);
+
+        return $this->getDotProduct($normA, $normB);
+    }
+
+    /**
+     * Approximates the arccosine (acos) of a value.
+     * The input value should be in the range [-1, 1].
+     * The output is the corresponding angle in radians.
+     * @param float|Port $x The input value, typically from getAlignmentValue().
+     * @return Port A float port representing the approximated angle in radians.
+     */
+    public function getAcosApproximation(float|Port $x): Port
+    {
+        // Ensure the input is a Port
+        $xPort = is_float($x) ? $this->getFloat($x) : $x;
+
+        // Part 1: Calculate the inner series (x + x³/6)
+        $x_cubed = $this->getCubeValue($xPort);
+        $x_cubed_div_6 = $this->getDivideValue($x_cubed, 6.0);
+        $inner_series = $this->getAddValue($xPort, $x_cubed_div_6);
+
+        // Part 2: Calculate π/2
+        $pi_div_2 = $this->getDivideValue($this->getPi(), 2.0);
+
+        // Final result: (π/2) - inner_series
+        return $this->getSubtractValue($pi_div_2, $inner_series);
+    }
+
+    /**
+     * Estimates the angle in radians between two vectors.
+     * Note: This is an approximation. For most AI decisions, using
+     * getAlignmentValue() directly is more efficient.
+     */
+    public function getAngleBetweenVectors(Port $a, Port $b): Port
+    {
+        // First, get the alignment value (-1 to 1)
+        $alignment = $this->getAlignmentValue($a, $b);
+
+        // Now, find the approximate arccosine of that value
+        return $this->getAcosApproximation($alignment);
+    }
+
+    /**
+     * Remaps a float value from a source range to a target range.
+     * @param float|Port $inputValue The incoming value to convert.
+     * @param float|Port $fromMin The lower bound of the value's original range.
+     * @param float|Port $fromMax The upper bound of the value's original range.
+     * @param float|Port $toMin The lower bound of the value's target range.
+     * @param float|Port $toMax The upper bound of the value's target range.
+     * @return Port The remapped float value.
+     */
+    public function remapValue(
+        float|Port $inputValue,
+        float|Port $fromMin,
+        float|Port $fromMax,
+        float|Port $toMin,
+        float|Port $toMax
+    ): Port {
+        // Numerator: (inputValue - fromMin) * (toMax - toMin)
+        $valSub = $this->getSubtractValue($inputValue, $fromMin);
+        $rangeTo = $this->getSubtractValue($toMax, $toMin);
+        $numerator = $this->getMultiplyValue($valSub, $rangeTo);
+
+        // Denominator: (fromMax - fromMin)
+        $rangeFrom = $this->getSubtractValue($fromMax, $fromMin);
+
+        // Result: numerator / denominator + toMin
+        $division = $this->getDivideValue($numerator, $rangeFrom);
+        return $this->getAddValue($division, $toMin);
+    }
+
+    /**
+     * Calculates the rejection of vector A from vector B.
+     * This is the component of A that is perpendicular to B.
+     * @param Port $vectorA The source vector.
+     * @param Port $vectorB The vector to reject from.
+     * @return Port The perpendicular component of vectorA.
+     */
+    public function getVectorRejection(Port $vectorA, Port $vectorB): Port
+    {
+        // First, find the parallel component (the projection).
+        $projection = $this->getVectorProjection($vectorA, $vectorB);
+
+        // Then, subtract the parallel component from the original vector.
+        // The remainder is the perpendicular component (the rejection).
+        return $this->getSubtractValue($vectorA, $projection);
+    }
+
+    /**
+     * Returns a Vector3(0, 0, 0) constant.
+     * Useful as a neutral element in additions or for comparisons.
+     */
+    public function getZeroVector3(): Port
+    {
+        return $this->constructVector3(0.0, 0.0, 0.0);
+    }
+
+    /**
+     * Returns a Vector3(1, 1, 1) constant.
+     * Useful for scaling operations or as a default vector.
+     */
+    public function getOneVector3(): Port
+    {
+        return $this->constructVector3(1.0, 1.0, 1.0);
+    }
+
+    /**
+     * Returns a Vector3(0, 1, 0) constant.
+     * Commonly used as the 'Up' vector in world space for calculations like cross products.
+     */
+    public function getUpVector3(): Port
+    {
+        return $this->constructVector3(0.0, 1.0, 0.0);
     }
 }
