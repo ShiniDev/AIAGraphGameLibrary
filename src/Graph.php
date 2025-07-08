@@ -11,6 +11,7 @@ use GraphLib\Exceptions\MaxConnectionsExceededException;
 use GraphLib\Nodes\ClampFloat;
 use GraphLib\Nodes\Kart;
 use GraphLib\Nodes\Spherecast;
+use GraphLib\Nodes\Vector3Split;
 use GraphLib\Traits\NodeFactory;
 
 /**
@@ -697,5 +698,227 @@ class Graph implements \JsonSerializable
         $dzSquared = $this->getSquareValue($dz);
         $sumOfSquares = $this->getAddValue($this->getAddValue($dxSquared, $dySquared), $dzSquared);
         return $this->getSqrtValue($sumOfSquares);
+    }
+
+    /**
+     * Creates a node to add two Vector3 values.
+     * @param Port $a The first vector.
+     * @param Port $b The second vector.
+     * @return Port The output port representing the sum (a + b).
+     */
+    public function getAddVector3(Port $a, Port $b): Port
+    {
+        return $this->createAddVector3()
+            ->connectInputA($a)
+            ->connectInputB($b)
+            ->getOutput();
+    }
+
+    /**
+     * Creates a node to subtract one Vector3 from another.
+     * @param Port $a The vector to subtract from.
+     * @param Port $b The vector to subtract.
+     * @return Port The output port representing the difference (a - b).
+     */
+    public function getSubtractVector3(Port $a, Port $b): Port
+    {
+        return $this->createSubtractVector3()
+            ->connectInputA($a)
+            ->connectInputB($b)
+            ->getOutput();
+    }
+
+    /**
+     * Creates a node to scale a Vector3 by a float value.
+     * This is equivalent to vector-scalar multiplication.
+     * @param Port $vector The vector to scale.
+     * @param float|Port $scalar The float value to scale by.
+     * @return Port The output port representing the scaled vector.
+     */
+    public function getScaleVector3(Port $vector, float|Port $scalar): Port
+    {
+        // Handle the case where the scalar is a raw float, not a Port.
+        $scalarPort = is_float($scalar) ? $this->getFloat($scalar) : $scalar;
+
+        // Assuming the ScaleVector3 node has connectInput() for the vector and connectScale() for the float.
+        // We may need to adjust these names based on the actual ScaleVector3 class definition.
+        return $this->createScaleVector3()
+            ->connectVector($vector)
+            ->connectScale($scalarPort)
+            ->getOutput();
+    }
+
+    /**
+     * Creates a node to normalize a Vector3, making its length 1.
+     * @param Port $vector The vector to normalize.
+     * @return Port The output port representing the normalized vector.
+     */
+    public function getNormalizedVector3(Port $vector): Port
+    {
+        return $this->createNormalize()
+            ->connectInput($vector)
+            ->getOutput();
+    }
+
+    /**
+     * Creates a node to calculate the magnitude (length) of a Vector3.
+     * @param Port $vector The input vector.
+     * @return Port The output port representing the magnitude as a float.
+     */
+    public function getMagnitude(Port $vector): Port
+    {
+        return $this->createMagnitude()
+            ->connectInput($vector)
+            ->getOutput();
+    }
+
+    /**
+     * Creates a node to calculate the distance between two Vector3 points.
+     * @param Port $a The first point.
+     * @param Port $b The second point.
+     * @return Port The output port representing the distance as a float.
+     */
+    public function getDistance(Port $a, Port $b): Port
+    {
+        return $this->createDistance()
+            ->connectInputA($a)
+            ->connectInputB($b)
+            ->getOutput();
+    }
+
+    /**
+     * Creates a node to split a Vector3 into its X, Y, and Z components.
+     * Note: This function returns the entire node, so you can access its multiple outputs.
+     * @param Port $vector The vector to split.
+     * @return Vector3Split The Vector3Split node itself.
+     */
+    public function splitVector3(Port $vector): Vector3Split
+    {
+        $splitNode = $this->createVector3Split();
+        $splitNode->connectInput($vector);
+        return $splitNode;
+    }
+
+    /**
+     * Creates a node to construct a Vector3 from three float components.
+     * @param float|Port $x The X component.
+     * @param float|Port $y The Y component.
+     * @param float|Port $z The Z component.
+     * @return Port The output port representing the constructed Vector3.
+     */
+    public function constructVector3(float|Port $x, float|Port $y, float|Port $z): Port
+    {
+        // Ensure each component is a Port
+        $xPort = is_float($x) ? $this->getFloat($x) : $x;
+        $yPort = is_float($y) ? $this->getFloat($y) : $y;
+        $zPort = is_float($z) ? $this->getFloat($z) : $z;
+
+        return $this->createConstructVector3()
+            ->connectX($xPort)
+            ->connectY($yPort)
+            ->connectZ($zPort)
+            ->getOutput();
+    }
+
+    /**
+     * Calculates the squared magnitude (length) of a Vector3.
+     * This is faster than getMagnitude() as it avoids a square root operation.
+     * @param Port $vector The input vector.
+     * @return Port The output port representing the squared magnitude as a float.
+     */
+    public function getMagnitudeSquared(Port $vector): Port
+    {
+        $split = $this->splitVector3($vector);
+
+        $x_sq = $this->getSquareValue($split->getOutputX());
+        $y_sq = $this->getSquareValue($split->getOutputY());
+        $z_sq = $this->getSquareValue($split->getOutputZ());
+
+        $sum = $this->getAddValue($x_sq, $y_sq);
+        return $this->getAddValue($sum, $z_sq);
+    }
+
+    /**
+     * Calculates the dot product of two Vector3 values.
+     * @param Port $a The first vector.
+     * @param Port $b The second vector.
+     * @return Port The output port representing the dot product as a float.
+     */
+    public function getDotProduct(Port $a, Port $b): Port
+    {
+        $a_split = $this->splitVector3($a);
+        $b_split = $this->splitVector3($b);
+
+        $x_prod = $this->getMultiplyValue($a_split->getOutputX(), $b_split->getOutputX());
+        $y_prod = $this->getMultiplyValue($a_split->getOutputY(), $b_split->getOutputY());
+        $z_prod = $this->getMultiplyValue($a_split->getOutputZ(), $b_split->getOutputZ());
+
+        $sum = $this->getAddValue($x_prod, $y_prod);
+        return $this->getAddValue($sum, $z_prod);
+    }
+
+    /**
+     * Calculates the cross product of two Vector3 values.
+     * @param Port $a The first vector.
+     * @param Port $b The second vector.
+     * @return Port The output port representing the perpendicular vector.
+     */
+    public function getCrossProduct(Port $a, Port $b): Port
+    {
+        $a_split = $this->splitVector3($a);
+        $b_split = $this->splitVector3($b);
+
+        // X component: (ay * bz) - (az * by)
+        $cx = $this->getSubtractValue(
+            $this->getMultiplyValue($a_split->getOutputY(), $b_split->getOutputZ()),
+            $this->getMultiplyValue($a_split->getOutputZ(), $b_split->getOutputY())
+        );
+
+        // Y component: (az * bx) - (ax * bz)
+        $cy = $this->getSubtractValue(
+            $this->getMultiplyValue($a_split->getOutputZ(), $b_split->getOutputX()),
+            $this->getMultiplyValue($a_split->getOutputX(), $b_split->getOutputZ())
+        );
+
+        // Z component: (ax * by) - (ay * bx)
+        $cz = $this->getSubtractValue(
+            $this->getMultiplyValue($a_split->getOutputX(), $b_split->getOutputY()),
+            $this->getMultiplyValue($a_split->getOutputY(), $b_split->getOutputX())
+        );
+
+        return $this->constructVector3($cx, $cy, $cz);
+    }
+
+    /**
+     * Projects a vector onto another vector.
+     * @param Port $vectorA The vector to project.
+     * @param Port $vectorB The vector to project onto.
+     * @return Port The output port representing the resulting projected vector.
+     */
+    public function getVectorProjection(Port $vectorA, Port $vectorB): Port
+    {
+        $dot = $this->getDotProduct($vectorA, $vectorB);
+        $magSq = $this->getMagnitudeSquared($vectorB);
+        $scale = $this->getDivideValue($dot, $magSq);
+
+        return $this->getScaleVector3($vectorB, $scale);
+    }
+
+    /**
+     * Reflects an incident vector off a surface defined by a normal.
+     * @param Port $incidentVector The incoming vector.
+     * @param Port $surfaceNormal The normal of the surface (should be a unit vector).
+     * @return Port The output port representing the reflected vector.
+     */
+    public function getVectorReflection(Port $incidentVector, Port $surfaceNormal): Port
+    {
+        // Ensure the normal is a unit vector for the formula to work correctly.
+        $normal = $this->getNormalizedVector3($surfaceNormal);
+
+        $dot = $this->getDotProduct($incidentVector, $normal);
+        $twoDot = $this->getMultiplyValue($dot, 2.0);
+        $scaledNormal = $this->getScaleVector3($normal, $twoDot);
+
+        return $this->getSubtractVector3($incidentVector, $scaledNormal);
     }
 }
