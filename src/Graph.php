@@ -543,4 +543,159 @@ class Graph implements \JsonSerializable
         $value = $this->getAddValue($value, $preventError);
         return $value;
     }
+
+    /**
+     * Returns a Port representing the mathematical constant PI (π).
+     */
+    public function getPi(): Port
+    {
+        return $this->getFloat(3.14159265359);
+    }
+
+    /**
+     * Converts a value from degrees to radians.
+     * Formula: radians = degrees * (PI / 180)
+     */
+    public function getDegreesToRadians(float|Port $degrees): Port
+    {
+        $piOver180 = $this->getDivideValue($this->getPi(), 180.0);
+        return $this->getMultiplyValue($degrees, $piOver180);
+    }
+
+    /**
+     * Creates a "Square" node structure (x²).
+     */
+    public function getSquareValue(float|Port $base): Port
+    {
+        $basePort = is_float($base) ? $this->getFloat($base) : $base;
+        return $this->getMultiplyValue($basePort, $basePort);
+    }
+
+    /**
+     * Creates a "Cube" node structure (x³).
+     */
+    public function getCubeValue(float|Port $base): Port
+    {
+        $basePort = is_float($base) ? $this->getFloat($base) : $base;
+        $square = $this->getSquareValue($basePort);
+        return $this->getMultiplyValue($square, $basePort);
+    }
+
+    /**
+     * Creates a "Power 4" node structure (x⁴).
+     */
+    public function getPower4Value(float|Port $base): Port
+    {
+        $basePort = is_float($base) ? $this->getFloat($base) : $base;
+        $cube = $this->getCubeValue($basePort);
+        return $this->getMultiplyValue($cube, $basePort);
+    }
+
+    /**
+     * Creates a "Power 5" node structure (x⁵).
+     */
+    public function getPower5Value(float|Port $base): Port
+    {
+        $basePort = is_float($base) ? $this->getFloat($base) : $base;
+        $power4 = $this->getPower4Value($basePort);
+        return $this->getMultiplyValue($power4, $basePort);
+    }
+
+    /**
+     * Calculates the square root by unrolling the Newton-Raphson method.
+     * This version uses 6 iterations for better precision.
+     */
+    public function getSqrtValue(float|Port $value): Port
+    {
+        $valuePort = is_float($value) ? $this->getFloat($value) : $value;
+        $x = $this->getDivideValue($valuePort, 2.0); // Initial guess
+
+        // Formula: x_next = x - (x² - S) / (2x)
+        // Unrolled 6 times for precision
+
+        // Iteration 1
+        $x_sq = $this->getMultiplyValue($x, $x);
+        $x = $this->getSubtractValue($x, $this->getDivideValue($this->getSubtractValue($x_sq, $valuePort), $this->getMultiplyValue(2.0, $x)));
+        // Iteration 2
+        $x_sq = $this->getMultiplyValue($x, $x);
+        $x = $this->getSubtractValue($x, $this->getDivideValue($this->getSubtractValue($x_sq, $valuePort), $this->getMultiplyValue(2.0, $x)));
+        // Iteration 3
+        $x_sq = $this->getMultiplyValue($x, $x);
+        $x = $this->getSubtractValue($x, $this->getDivideValue($this->getSubtractValue($x_sq, $valuePort), $this->getMultiplyValue(2.0, $x)));
+        // Iteration 4
+        $x_sq = $this->getMultiplyValue($x, $x);
+        $x = $this->getSubtractValue($x, $this->getDivideValue($this->getSubtractValue($x_sq, $valuePort), $this->getMultiplyValue(2.0, $x)));
+        // Iteration 5
+        $x_sq = $this->getMultiplyValue($x, $x);
+        $x = $this->getSubtractValue($x, $this->getDivideValue($this->getSubtractValue($x_sq, $valuePort), $this->getMultiplyValue(2.0, $x)));
+        // Iteration 6
+        $x_sq = $this->getMultiplyValue($x, $x);
+        $x = $this->getSubtractValue($x, $this->getDivideValue($this->getSubtractValue($x_sq, $valuePort), $this->getMultiplyValue(2.0, $x)));
+
+        return $this->getAbsValue($x);
+    }
+
+    /**
+     * Calculates sine using a Taylor series approximation with fixed power nodes.
+     * sin(x) ≈ x - x³/3! + x⁵/5!
+     */
+    public function getSinValue(float|Port $angleRadians): Port
+    {
+        $term1 = $angleRadians;
+        $term2 = $this->getDivideValue($this->getCubeValue($angleRadians), 6.0);
+        $term3 = $this->getDivideValue($this->getPower5Value($angleRadians), 120.0);
+
+        $sum1 = $this->getSubtractValue($term1, $term2);
+        return $this->getAddValue($sum1, $term3);
+    }
+
+    /**
+     * Calculates cosine using a Taylor series approximation with fixed power nodes.
+     * cos(x) ≈ 1 - x²/2! + x⁴/4!
+     */
+    public function getCosValue(float|Port $angleRadians): Port
+    {
+        $term1 = $this->getFloat(1.0);
+        $term2 = $this->getDivideValue($this->getSquareValue($angleRadians), 2.0);
+        $term3 = $this->getDivideValue($this->getPower4Value($angleRadians), 24.0);
+
+        $sum1 = $this->getSubtractValue($term1, $term2);
+        return $this->getAddValue($sum1, $term3);
+    }
+
+    /**
+     * Performs linear interpolation between two values (Lerp).
+     * Formula: a + (b - a) * t
+     */
+    public function getLerpValue(float|Port $a, float|Port $b, float|Port $t): Port
+    {
+        $bMinusA = $this->getSubtractValue($b, $a);
+        $interp = $this->getMultiplyValue($bMinusA, $t);
+        return $this->getAddValue($a, $interp);
+    }
+
+    /**
+     * Calculates the 2D distance between two points.
+     * Formula: sqrt(dx² + dy²)
+     */
+    public function getDistance2D(float|Port $dx, float|Port $dy): Port
+    {
+        $dxSquared = $this->getSquareValue($dx);
+        $dySquared = $this->getSquareValue($dy);
+        $sumOfSquares = $this->getAddValue($dxSquared, $dySquared);
+        return $this->getSqrtValue($sumOfSquares);
+    }
+
+    /**
+     * Calculates the 3D distance between two points.
+     * Formula: sqrt(dx² + dy² + dz²)
+     */
+    public function getDistance3D(float|Port $dx, float|Port $dy, float|Port $dz): Port
+    {
+        $dxSquared = $this->getSquareValue($dx);
+        $dySquared = $this->getSquareValue($dy);
+        $dzSquared = $this->getSquareValue($dz);
+        $sumOfSquares = $this->getAddValue($this->getAddValue($dxSquared, $dySquared), $dzSquared);
+        return $this->getSqrtValue($sumOfSquares);
+    }
 }
