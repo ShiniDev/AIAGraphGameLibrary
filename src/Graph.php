@@ -364,52 +364,125 @@ class Graph implements \JsonSerializable
         return $kart;
     }
 
-    public function initializeSphereCast(float $radius, float $distance): Spherecast
+    public function initializeSphereCast(float|Port $radius, float|Port $distance): Spherecast
     {
-        $radiusFloat = $this->getFloat($radius);
-        $distanceFloat = $this->getFloat($distance);
+        $radiusFloat = is_float($radius) ? $this->getFloat($radius) : $radius;
+        $distanceFloat = is_float($distance) ? $this->getFloat($distance) : $distance;
         $sphereCast = $this->createSpherecast();
         $sphereCast->connectDistance($distanceFloat);
         $sphereCast->connectRadius($radiusFloat);
         return $sphereCast;
     }
 
-    public function getClampedValue(float $min, float $max, Port $value): Port
+    public function getAddValue(float|Port $portTop, float|Port $portBottom): Port
     {
-        $clamp = $this->createClampFloat();
-        $clamp->connectMin($this->getFloat($min));
-        $clamp->connectMax($this->getFloat($max));
-        $clamp->connectValue($value);
-        return $clamp->getOutput();
-    }
+        $portTopPort = is_float($portTop) ? $this->getFloat($portTop) : $portTop;
+        $portBottomPort = is_float($portBottom) ? $this->getFloat($portBottom) : $portBottom;
 
-    public function getAddValue(Port $portTop, Port $portBottom): Port
-    {
         $addFloats = $this->createAddFloats();
-        $addFloats->connectInputA($portTop);
-        $addFloats->connectInputB($portBottom);
+        $addFloats->connectInputA($portTopPort);
+        $addFloats->connectInputB($portBottomPort);
         return $addFloats->getOutput();
     }
 
-    public function getMultiplyValue(Port $portTop, Port $portBottom): Port
+    public function getSubtractValue(float|Port $portTop, float|Port $portBottom): Port
     {
+        $portTopPort = is_float($portTop) ? $this->getFloat($portTop) : $portTop;
+        $portBottomPort = is_float($portBottom) ? $this->getFloat($portBottom) : $portBottom;
+
+        $subtractFloats = $this->createSubtractFloats();
+        $subtractFloats->connectInputA($portTopPort);
+        $subtractFloats->connectInputB($portBottomPort);
+        return $subtractFloats->getOutput();
+    }
+
+    public function getMultiplyValue(float|Port $portTop, float|Port $portBottom): Port
+    {
+        $portTopPort = is_float($portTop) ? $this->getFloat($portTop) : $portTop;
+        $portBottomPort = is_float($portBottom) ? $this->getFloat($portBottom) : $portBottom;
+
         $multiplyFloats = $this->createMultiplyFloats();
-        $multiplyFloats->connectInputA($portTop);
-        $multiplyFloats->connectInputB($portBottom);
+        $multiplyFloats->connectInputA($portTopPort);
+        $multiplyFloats->connectInputB($portBottomPort);
         return $multiplyFloats->getOutput();
     }
 
-    public function getSubtractValue(Port $portTop, Port $portBottom): Port
+    public function getDivideValue(float|Port $portTop, float|Port $portBottom): Port
     {
-        $subtractFloats = $this->createSubtractFloats();
-        $subtractFloats->connectInputA($portTop);
-        $subtractFloats->connectInputB($portBottom);
-        return $subtractFloats->getOutput();
+        $portTopPort = is_float($portTop) ? $this->getFloat($portTop) : $portTop;
+        $portBottomPort = is_float($portBottom) ? $this->getFloat($portBottom) : $portBottom;
+
+        $divideFloats = $this->createDivideFloats();
+        $divideFloats->connectInputA($portTopPort);
+        $divideFloats->connectInputB($portBottomPort);
+        return $divideFloats->getOutput();
     }
 
     public function getFloat(float $float)
     {
         return $this->createFloat($float)->getOutput();
+    }
+
+    public function getClampedValue(float|Port $min, float|Port $max, float|Port $value): Port
+    {
+        $minPort = is_float($min) ? $this->getFloat($min) : $min;
+        $maxPort = is_float($max) ? $this->getFloat($max) : $max;
+        $valuePort = is_float($value) ? $this->getFloat($value) : $value;
+
+        $clamp = $this->createClampFloat();
+        $clamp->connectMin($minPort);
+        $clamp->connectMax($maxPort);
+        $clamp->connectValue($valuePort);
+        return $clamp->getOutput();
+    }
+
+    public function getNormalizedValue(float|Port $min, float|Port $max, float|Port $value): Port
+    {
+        // Formula: (value - min) / (max - min)
+        $numerator = $this->getSubtractValue($value, $min);
+        $denominator = $this->getSubtractValue($max, $min);
+
+        return $this->getDivideValue($numerator, $denominator);
+    }
+
+    public function getAbsValue(float|Port $value): Port
+    {
+        $valuePort = is_float($value) ? $this->getFloat($value) : $value;
+
+        $abs = $this->createAbsFloat();
+        $abs->connectInput($valuePort);
+        return $abs->getOutput();
+    }
+
+    public function getInverseValue(float|Port $valueOutput): Port
+    {
+        return $this->getMultiplyValue($valueOutput, -1);
+    }
+
+    public function getInverseBool(Port $boolOutput): Port
+    {
+        $inverse = $this->createNot();
+        $inverse->connectInput($boolOutput);
+        return $inverse->getOutput();
+    }
+
+    public function getConditionalFloat(Port $condition, float|Port $ifTrue, float|Port $ifFalse): Port
+    {
+        $truePortion = $this->setCondFloat(true, $condition, $ifTrue);
+        $falsePortion = $this->setCondFloat(false, $condition, $ifFalse);
+        return $this->getAddValue($truePortion, $falsePortion);
+    }
+
+    public function getMinValue(float|Port $floatA, float|Port $floatB): Port
+    {
+        $isALess = $this->compareFloats(FloatOperator::LESS_THAN, $floatA, $floatB);
+        return $this->getConditionalFloat($isALess, $floatA, $floatB);
+    }
+
+    public function getMaxValue(float|Port $floatA, float|Port $floatB): Port
+    {
+        $isAGreater = $this->compareFloats(FloatOperator::GREATER_THAN, $floatA, $floatB);
+        return $this->getConditionalFloat($isAGreater, $floatA, $floatB);
     }
 
     public function compareBool(BooleanOperator $op, Port $boolA, ?Port $boolB = null)
@@ -428,68 +501,27 @@ class Graph implements \JsonSerializable
             ->connectInputB($boolB)
             ->getOutput();
     }
-    public function compareFloats(FloatOperator $op, Port $floatA, Port $floatB)
+
+    public function compareFloats(FloatOperator $op, float|Port $floatA, float|Port $floatB)
     {
+        $floatAPort = is_float($floatA) ? $this->getFloat($floatA) : $floatA;
+        $floatBPort = is_float($floatB) ? $this->getFloat($floatB) : $floatB;
+
         return $this->createCompareFloats($op)
-            ->connectInputA($floatA)
-            ->connectInputB($floatB)
+            ->connectInputA($floatAPort)
+            ->connectInputB($floatBPort)
             ->getOutput();
     }
-    public function setCondFloat(bool $cond, Port $condition, Port $float)
+
+    public function setCondFloat(bool $cond, Port $condition, float|Port $float)
     {
-        $cond = $cond ? ConditionalBranch::TRUE : ConditionalBranch::FALSE;
-        return $this->createConditionalSetFloat($cond)
+        $floatPort = is_float($float) ? $this->getFloat($float) : $float;
+
+        $condBranch = $cond ? ConditionalBranch::TRUE : ConditionalBranch::FALSE;
+        return $this->createConditionalSetFloat($condBranch)
             ->connectCondition($condition)
-            ->connectFloat($float)
+            ->connectFloat($floatPort)
             ->getOutput();
-    }
-
-    public function getDivideValue(Port $portTop, Port $portBottom): Port
-    {
-        $divideFloats = $this->createDivideFloats();
-        $divideFloats->connectInputA($portTop);
-        $divideFloats->connectInputB($portBottom);
-        return $divideFloats->getOutput();
-    }
-
-    public function getNormalizedValue(float $min, float $max, Port $valueOutput): Port
-    {
-        $minFloat = $this->getFloat($min);
-        $maxFloat = $this->getFloat($max);
-        $numerator = $this->createSubtractFloats();
-        $numerator->connectInputA($valueOutput);
-        $numerator->connectInputB($minFloat);
-
-        $denominator = $this->createSubtractFloats();
-        $denominator->connectInputA($maxFloat);
-        $denominator->connectInputB($minFloat);
-
-        $division = $this->createDivideFloats();
-        $division->connectInputA($numerator->getOutput())->connectInputB($denominator->getOutput());
-
-        return $division->getOutput();
-    }
-
-    public function getAbsValue(Port $valueOutput): Port
-    {
-        $abs = $this->createAbsFloat();
-        $abs->connectInput($valueOutput);
-        return $abs->getOutput();
-    }
-
-    public function getInverseValue(Port $valueOutput): Port
-    {
-        return $this->getMultiplyValue(
-            $valueOutput,
-            $this->getFloat(-1)
-        );
-    }
-
-    public function getInverseBool(Port $boolOutput): Port
-    {
-        $inverse = $this->createNot();
-        $inverse->connectInput($boolOutput);
-        return $inverse->getOutput();
     }
 
     public function debug(Port ...$ports)
@@ -503,31 +535,12 @@ class Graph implements \JsonSerializable
     public function preventError(Port $value)
     {
         $value = $this->getClampedValue(-1, 1, $value);
-        $checkUpper = $this->compareFloats(FloatOperator::LESS_THAN_OR_EQUAL, $value, $this->getFloat(1));
-        $checkLower = $this->compareFloats(FloatOperator::GREATER_THAN_OR_EQUAL, $value, $this->getFloat(-1));
+        $checkUpper = $this->compareFloats(FloatOperator::LESS_THAN_OR_EQUAL, $value, 1);
+        $checkLower = $this->compareFloats(FloatOperator::GREATER_THAN_OR_EQUAL, $value, -1);
         $check = $this->compareBool(BooleanOperator::AND, $checkUpper, $checkLower);
-        $preventError = $this->setCondFloat(false, $check, $this->getFloat(0));
+        $preventError = $this->setCondFloat(false, $check, 0);
         $value = $this->setCondFloat(true, $check, $value);
         $value = $this->getAddValue($value, $preventError);
         return $value;
-    }
-
-    public function getConditionalFloat(Port $condition, Port $ifTrue, Port $ifFalse): Port
-    {
-        $truePortion = $this->setCondFloat(true, $condition, $ifTrue);
-        $falsePortion = $this->setCondFloat(false, $condition, $ifFalse);
-        return $this->getAddValue($truePortion, $falsePortion);
-    }
-
-    public function getMinValue(Port $floatA, Port $floatB): Port
-    {
-        $isALess = $this->compareFloats(FloatOperator::LESS_THAN, $floatA, $floatB);
-        return $this->getConditionalFloat($isALess, $floatA, $floatB);
-    }
-
-    public function getMaxValue(Port $floatA, Port $floatB): Port
-    {
-        $isAGreater = $this->compareFloats(FloatOperator::GREATER_THAN, $floatA, $floatB);
-        return $this->getConditionalFloat($isAGreater, $floatA, $floatB);
     }
 }
