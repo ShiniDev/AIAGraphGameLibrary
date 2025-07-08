@@ -175,7 +175,7 @@ class Graph implements \JsonSerializable
      * @param int $offsetX The horizontal offset between nodes in the layout.
      * @param int $offsetY The vertical offset between nodes in the layout.
      */
-    public function autoLayout(int $offsetX = 350, int $offsetY = 180)
+    public function autoLayout(int $offsetX = 350, int $offsetY = 215)
     {
         if (empty($this->serializableNodes)) {
             return;
@@ -606,6 +606,46 @@ class Graph implements \JsonSerializable
     }
 
     /**
+     * Creates a "Power 6" node structure (x⁶).
+     */
+    public function getPower6Value(float|Port $base): Port
+    {
+        $basePort = is_float($base) ? $this->getFloat($base) : $base;
+        $power5 = $this->getPower5Value($basePort);
+        return $this->getMultiplyValue($power5, $basePort);
+    }
+
+    /**
+     * Creates a "Power 7" node structure (x⁷).
+     */
+    public function getPower7Value(float|Port $base): Port
+    {
+        $basePort = is_float($base) ? $this->getFloat($base) : $base;
+        $power6 = $this->getPower6Value($basePort);
+        return $this->getMultiplyValue($power6, $basePort);
+    }
+
+    /**
+     * Creates a "Power 8" node structure (x⁸).
+     */
+    public function getPower8Value(float|Port $base): Port
+    {
+        $basePort = is_float($base) ? $this->getFloat($base) : $base;
+        $power7 = $this->getPower7Value($basePort);
+        return $this->getMultiplyValue($power7, $basePort);
+    }
+
+    /**
+     * Creates a "Power 9" node structure (x⁹).
+     */
+    public function getPower9Value(float|Port $base): Port
+    {
+        $basePort = is_float($base) ? $this->getFloat($base) : $base;
+        $power8 = $this->getPower8Value($basePort);
+        return $this->getMultiplyValue($power8, $basePort);
+    }
+
+    /**
      * Calculates the square root by unrolling the Newton-Raphson method.
      * This version uses 6 iterations for better precision.
      */
@@ -665,6 +705,100 @@ class Graph implements \JsonSerializable
 
         $sum1 = $this->getSubtractValue($term1, $term2);
         return $this->getAddValue($sum1, $term3);
+    }
+
+    /**
+     * Calculates arctangent (atan) using a Taylor series approximation with more terms.
+     * atan(x) ≈ x - x³/3 + x⁵/5 - x⁷/7 + x⁹/9
+     * This series converges well for |x| <= 1. For values outside this range,
+     * its accuracy degrades significantly.
+     */
+    public function getAtanValue(float|Port $value): Port
+    {
+        $valuePort = is_float($value) ? $this->getFloat($value) : $value;
+
+        // Term 1: x
+        $term1 = $valuePort;
+
+        // Term 2: -x³/3
+        $cube = $this->getCubeValue($valuePort);
+        $term2 = $this->getDivideValue($cube, 3.0);
+        $sum = $this->getSubtractValue($term1, $term2);
+
+        // Term 3: +x⁵/5
+        $power5 = $this->getPower5Value($valuePort);
+        $term3 = $this->getDivideValue($power5, 5.0);
+        $sum = $this->getAddValue($sum, $term3);
+
+        // Term 4: -x⁷/7
+        $power7 = $this->getPower7Value($valuePort);
+        $term4 = $this->getDivideValue($power7, 7.0);
+        $sum = $this->getSubtractValue($sum, $term4);
+
+        // Term 5: +x⁹/9
+        $power9 = $this->getPower9Value($valuePort);
+        $term5 = $this->getDivideValue($power9, 9.0);
+        $sum = $this->getAddValue($sum, $term5);
+
+        return $sum;
+    }
+
+    /**
+     * Calculates arcsine (asin) using a Taylor series approximation with more terms.
+     * asin(x) ≈ x + (x³/6) + (3x⁵/40) + (15x⁷/336) + (105x⁹/3456)
+     * This series converges for |x| <= 1. For values close to 1, more terms may be needed
+     * for high accuracy.
+     */
+    public function getAsinValue(float|Port $value): Port
+    {
+        $valuePort = is_float($value) ? $this->getFloat($value) : $value;
+
+        // Term 1: x
+        $term1 = $valuePort;
+
+        // Term 2: (1/2)*(x³/3) = x³/6
+        $cube = $this->getCubeValue($valuePort);
+        $term2 = $this->getDivideValue($cube, 6.0);
+        $sum = $this->getAddValue($term1, $term2);
+
+        // Term 3: (1*3)/(2*4)*(x⁵/5) = 3x⁵/40
+        $power5 = $this->getPower5Value($valuePort);
+        $term3Numerator = $this->getMultiplyValue(3.0, $power5);
+        $term3 = $this->getDivideValue($term3Numerator, 40.0);
+        $sum = $this->getAddValue($sum, $term3);
+
+        // Term 4: (1*3*5)/(2*4*6)*(x⁷/7) = 15x⁷/336
+        $power7 = $this->getPower7Value($valuePort);
+        $term4Numerator = $this->getMultiplyValue(15.0, $power7);
+        $term4 = $this->getDivideValue($term4Numerator, 336.0); // Or $this->getDivideValue($this->getMultiplyValue(5.0, $power7), 112.0);
+        $sum = $this->getAddValue($sum, $term4);
+
+        // Term 5: (1*3*5*7)/(2*4*6*8)*(x⁹/9) = 105x⁹/3456
+        $power9 = $this->getPower9Value($valuePort);
+        $term5Numerator = $this->getMultiplyValue(105.0, $power9);
+        $term5 = $this->getDivideValue($term5Numerator, 3456.0); // Or $this->getDivideValue($this->getMultiplyValue(35.0, $power9), 1152.0);
+        $sum = $this->getAddValue($sum, $term5);
+
+        return $sum;
+    }
+
+    /**
+     * Calculates arccosine (acos) using the identity: acos(x) = PI/2 - asin(x).
+     * It relies on the accuracy of the getAsinValue function, which has been updated
+     * with more terms.
+     * Input value 'x' must be between -1 and 1 (inclusive).
+     */
+    public function getAcosValue(float|Port $value): Port
+    {
+        $valuePort = is_float($value) ? $this->getFloat($value) : $value;
+
+        // Assume clamping or input validation is handled upstream if needed,
+        // as direct clamping might add complexity in a Port system.
+
+        $halfPi = $this->getDivideValue($this->getPi(), 2.0); // PI/2
+        $asinValue = $this->getAsinValue($valuePort);
+
+        return $this->getSubtractValue($halfPi, $asinValue);
     }
 
     /**
@@ -1282,36 +1416,6 @@ class Graph implements \JsonSerializable
     }
 
     /**
-     * Creates a clock signal (oscillator).
-     * It produces a blinking true/false output.
-     * @param int $chainLength The number of NOT gates in the chain. A longer chain
-     * results in a slower clock frequency (longer delay).
-     * @return Port The boolean port outputting the clock signal.
-     */
-    public function createClock(int $chainLength = 1): Port
-    {
-        // Ensure at least one gate for oscillation
-        $chainLength = max(1, $chainLength);
-
-        // Create the first gate, which will be the start of our loop
-        $firstGate = $this->createNot();
-        $lastOutput = $firstGate->getOutput();
-
-        // Chain additional gates to add delay and slow the clock
-        for ($i = 1; $i < $chainLength; $i++) {
-            $nextGateInChain = $this->createNot();
-            $nextGateInChain->connectInput($lastOutput);
-            $lastOutput = $nextGateInChain->getOutput();
-        }
-
-        // Create the feedback loop by connecting the end of the chain to the beginning
-        $firstGate->connectInput($lastOutput);
-
-        // The output can be taken from any point in the chain
-        return $lastOutput;
-    }
-
-    /**
      * Creates the nodes for a 1-bit SR Latch and wires them together.
      * This version is built from fundamental OR and NOT gates.
      * @return LatchComponent An object containing the latch's ports.
@@ -1379,8 +1483,8 @@ class Graph implements \JsonSerializable
             $reset_signal = $this->getAndGate($not_data, $writeEnable);
 
             // Connect the logic to the latch.
-            $latch->set->connectTo($set_signal);
-            $latch->reset->connectTo($reset_signal);
+            $set_signal->connectTo($latch->set);
+            $reset_signal->connectTo($latch->reset);
 
             // Add this bit's input and output to our component's arrays.
             $register->dataInputs[] = $data_input_port;
@@ -1393,37 +1497,37 @@ class Graph implements \JsonSerializable
     /**
      * Creates a float-based state timer. It counts on every frame that
      * the condition is true and resets to zero when the condition is false.
-     * @return StateTimerComponent An object containing the timer's ports.
+     * @param Port $condition The boolean port that enables counting.
+     * @return Port the timer's output count port.
      */
-    public function createStateTimer(): StateTimerComponent
+    public function createStateTimer(Port $condition): Port
     {
-        // Create the core nodes
+        // These two nodes form a Multiplexer (MUX) driven by the condition.
+        $ifTrueGate = $this->createConditionalSetFloat(ConditionalBranch::TRUE);
+        $ifFalseGate = $this->createConditionalSetFloat(ConditionalBranch::FALSE);
+
+        // Connect the user's condition to both sides of the MUX.
+        $ifTrueGate->connectCondition($condition);
+        $ifFalseGate->connectCondition($condition);
+
+        // The "false" path of the MUX always outputs 0, resetting the timer.
+        $ifFalseGate->connectFloat($this->getFloat(0.0));
+
+        // The final output of the timer is the MUX's result.
+        $muxOutput = $this->getAddValue($ifTrueGate->getOutput(), $ifFalseGate->getOutput());
+
+        // The adder will calculate the "next value" for the timer.
         $adder = $this->createAddFloats();
-        $gate = $this->createConditionalSetFloat(ConditionalBranch::TRUE);
-        $resetMux = $this->createConditionalSetFloat(ConditionalBranch::FALSE);
+        $adder->connectInputB($this->getFloat(1.0)); // It always adds 1
 
-        // Create the feedback loop: The output of the gate feeds back into the adder.
-        $adder->connectInputA($gate->getOutput());
+        // Create the feedback loop:
+        // The MUX output (the current count) is fed back into the adder's input A.
+        $adder->connectInputA($muxOutput);
 
-        // The adder increments by 1.0 each frame.
-        $adder->connectInputB($this->getFloat(1.0));
+        // The adder's result (current count + 1) is fed into the "true" path of the MUX.
+        $ifTrueGate->connectFloat($adder->getOutput());
 
-        // The gate's input is the result of the addition.
-        $gate->connectFloat($adder->getOutput());
-
-        // The reset logic: a second conditional that outputs 0 when the main
-        // condition is false, which gets added to the main gate's output.
-        $resetMux->connectCondition($gate->conditionInput);
-        $resetMux->connectFloat($this->getFloat(0));
-        $gate->getOutput()->connectTo($this->createAddFloats()->connectInputA($resetMux->getOutput())->getOutput());
-
-
-        // Create the component to return
-        $timer = new StateTimerComponent();
-        $timer->condition = $gate->conditionInput; // Expose the gate's condition port
-        $timer->reset = $resetMux->conditionInput; // A manual reset
-        $timer->count = $gate->getOutput(); // The final count
-
-        return $timer;
+        // Create the component to return.
+        return $muxOutput;
     }
 }
