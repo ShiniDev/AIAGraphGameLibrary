@@ -2,6 +2,9 @@
 
 namespace GraphLib;
 
+use GraphLib\Components\LatchComponent;
+use GraphLib\Components\RegisterComponent;
+use GraphLib\Components\StateTimerComponent;
 use GraphLib\Enums\BooleanOperator;
 use GraphLib\Enums\ConditionalBranch;
 use GraphLib\Enums\FloatOperator;
@@ -9,7 +12,6 @@ use GraphLib\Enums\GetKartVector3Modifier;
 use GraphLib\Exceptions\IncompatiblePortTypeException;
 use GraphLib\Exceptions\IncompatiblePolarityException;
 use GraphLib\Exceptions\MaxConnectionsExceededException;
-use GraphLib\Nodes\ClampFloat;
 use GraphLib\Nodes\Kart;
 use GraphLib\Nodes\Spherecast;
 use GraphLib\Nodes\Vector3Split;
@@ -1232,5 +1234,196 @@ class Graph implements \JsonSerializable
     public function getUpVector3(): Port
     {
         return $this->constructVector3(0.0, 1.0, 0.0);
+    }
+
+    /**
+     * Creates a NOT gate. Inverts the boolean input.
+     */
+    public function getNotGate(Port $input): Port
+    {
+        return $this->getInverseBool($input);
+    }
+
+    /**
+     * Creates an AND gate. Returns true only if both inputs are true.
+     */
+    public function getAndGate(Port $inputA, Port $inputB): Port
+    {
+        return $this->compareBool(BooleanOperator::AND, $inputA, $inputB);
+    }
+
+    /**
+     * Creates a NAND gate (Not AND). Returns false only if both inputs are true.
+     * This is a universal gate from which all others can be built.
+     */
+    public function getNandGate(Port $inputA, Port $inputB): Port
+    {
+        $andResult = $this->getAndGate($inputA, $inputB);
+        return $this->getNotGate($andResult);
+    }
+
+    /**
+     * Creates an OR gate. Returns true if at least one input is true.
+     * This is built using the principle: A or B = not((not A) and (not B))
+     */
+    public function getOrGate(Port $inputA, Port $inputB): Port
+    {
+        return $this->compareBool(BooleanOperator::OR, $inputA, $inputB);
+    }
+
+
+    /**
+     * Creates a NOR gate component (Not OR).
+     */
+    public function getNorGate(Port $inputA, Port $inputB): Port
+    {
+        $orResult = $this->getOrGate($inputA, $inputB);
+        return $this->getNotGate($orResult);
+    }
+
+    /**
+     * Creates a clock signal (oscillator).
+     * It produces a blinking true/false output.
+     * @param int $chainLength The number of NOT gates in the chain. A longer chain
+     * results in a slower clock frequency (longer delay).
+     * @return Port The boolean port outputting the clock signal.
+     */
+    public function createClock(int $chainLength = 1): Port
+    {
+        // Ensure at least one gate for oscillation
+        $chainLength = max(1, $chainLength);
+
+        // Create the first gate, which will be the start of our loop
+        $firstGate = $this->createNot();
+        $lastOutput = $firstGate->getOutput();
+
+        // Chain additional gates to add delay and slow the clock
+        for ($i = 1; $i < $chainLength; $i++) {
+            $nextGateInChain = $this->createNot();
+            $nextGateInChain->connectInput($lastOutput);
+            $lastOutput = $nextGateInChain->getOutput();
+        }
+
+        // Create the feedback loop by connecting the end of the chain to the beginning
+        $firstGate->connectInput($lastOutput);
+
+        // The output can be taken from any point in the chain
+        return $lastOutput;
+    }
+
+    /**
+     * Creates the nodes for a 1-bit SR Latch and wires them together.
+     * This version is built from fundamental OR and NOT gates.
+     * @return LatchComponent An object containing the latch's ports.
+     */
+    public function createSRLatch(): LatchComponent
+    {
+        // A NOR Latch is two cross-coupled NOR gates.
+        // We build each NOR gate from an OR and a NOT gate.
+
+        // 1. Create the physical nodes for the first NOR gate (OR1 -> NOT1)
+        $or1 = $this->createCompareBool(BooleanOperator::OR);
+        $not1 = $this->createNot()->connectInput($or1->getOutput());
+
+        // 2. Create the physical nodes for the second NOR gate (OR2 -> NOT2)
+        $or2 = $this->createCompareBool(BooleanOperator::OR);
+        $not2 = $this->createNot()->connectInput($or2->getOutput());
+
+        // 3. Internally wire the feedback loop.
+        // The output of the first NOR gate (not1) feeds into the second (or2).
+        $or2->connectInputB($not1->getOutput());
+        // The output of the second NOR gate (not2) feeds back into the first (or1).
+        $or1->connectInputB($not2->getOutput());
+
+        // 4. Create our simple data object to hold the ports.
+        $latch = new LatchComponent();
+
+        // 5. Assign the important ports to the data object.
+        // For a NOR Latch, the inputs are active-high.
+        // S (Set) is the free input on the gate whose output is Qn.
+        // R (Reset) is the free input on the gate whose output is Q.
+        $latch->set = $or1->inputA;   // Set connects to the gate that outputs Qn
+        $latch->reset = $or2->inputA; // Reset connects to the gate that outputs Q
+        $latch->q = $not2->getOutput();
+        $latch->qn = $not1->getOutput();
+
+        // 6. Return the component object.
+        return $latch;
+    }
+
+    /**
+     * Creates a multi-bit register to store a binary number (e.g., an AI state).
+     * This version is built directly from SR Latches.
+     *
+     * @param int $bitCount The number of bits the register can hold.
+     * @param Port $writeEnable A single boolean port that enables writing to ALL bits.
+     * @return RegisterComponent An object containing arrays of data inputs and outputs.
+     */
+    public function createRegister(int $bitCount, Port $writeEnable): RegisterComponent
+    {
+        $register = new RegisterComponent();
+
+        for ($i = 0; $i < $bitCount; $i++) {
+            // Create the core 1-bit memory cell.
+            $latch = $this->createSRLatch();
+
+            // Create a dedicated data input port for this bit.
+            $data_input_port = $this->createBool(false)->getOutput();
+
+            // Create the logic to write to the latch.
+            // SET the latch if (Data is TRUE) AND (Write is ENABLED).
+            $set_signal = $this->getAndGate($data_input_port, $writeEnable);
+
+            // RESET the latch if (Data is FALSE) AND (Write is ENABLED).
+            $not_data = $this->getNotGate($data_input_port);
+            $reset_signal = $this->getAndGate($not_data, $writeEnable);
+
+            // Connect the logic to the latch.
+            $latch->set->connectTo($set_signal);
+            $latch->reset->connectTo($reset_signal);
+
+            // Add this bit's input and output to our component's arrays.
+            $register->dataInputs[] = $data_input_port;
+            $register->dataOutputs[] = $latch->q;
+        }
+
+        return $register;
+    }
+
+    /**
+     * Creates a float-based state timer. It counts on every frame that
+     * the condition is true and resets to zero when the condition is false.
+     * @return StateTimerComponent An object containing the timer's ports.
+     */
+    public function createStateTimer(): StateTimerComponent
+    {
+        // Create the core nodes
+        $adder = $this->createAddFloats();
+        $gate = $this->createConditionalSetFloat(ConditionalBranch::TRUE);
+        $resetMux = $this->createConditionalSetFloat(ConditionalBranch::FALSE);
+
+        // Create the feedback loop: The output of the gate feeds back into the adder.
+        $adder->connectInputA($gate->getOutput());
+
+        // The adder increments by 1.0 each frame.
+        $adder->connectInputB($this->getFloat(1.0));
+
+        // The gate's input is the result of the addition.
+        $gate->connectFloat($adder->getOutput());
+
+        // The reset logic: a second conditional that outputs 0 when the main
+        // condition is false, which gets added to the main gate's output.
+        $resetMux->connectCondition($gate->conditionInput);
+        $resetMux->connectFloat($this->getFloat(0));
+        $gate->getOutput()->connectTo($this->createAddFloats()->connectInputA($resetMux->getOutput())->getOutput());
+
+
+        // Create the component to return
+        $timer = new StateTimerComponent();
+        $timer->condition = $gate->conditionInput; // Expose the gate's condition port
+        $timer->reset = $resetMux->conditionInput; // A manual reset
+        $timer->count = $gate->getOutput(); // The final count
+
+        return $timer;
     }
 }
