@@ -2,12 +2,12 @@
 
 namespace GraphLib\Nodes;
 
-use GraphLib\Color;
+use GraphLib\Graph\Color;
 use GraphLib\Enums\ConditionalBranch;
-use GraphLib\Graph;
-use GraphLib\Node;
-use GraphLib\Port;
-use GraphLib\Vector2;
+use GraphLib\Graph\Graph;
+use GraphLib\Graph\Node;
+use GraphLib\Graph\Port;
+use GraphLib\Graph\Vector2;
 
 class ConditionalSetFloat extends Node
 {

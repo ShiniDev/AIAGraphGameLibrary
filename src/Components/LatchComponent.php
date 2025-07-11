@@ -2,7 +2,7 @@
 
 namespace GraphLib\Components;
 
-use GraphLib\Port;
+use GraphLib\Graph\Port;
 
 /**
  * A simple data class to hold the ports of a latch circuit.

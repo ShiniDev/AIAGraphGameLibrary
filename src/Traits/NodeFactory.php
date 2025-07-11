@@ -6,7 +6,7 @@ use GraphLib\Enums\BooleanOperator;
 use GraphLib\Enums\ConditionalBranch;
 use GraphLib\Enums\FloatOperator;
 use GraphLib\Enums\GetKartVector3Modifier;
-use GraphLib\Graph;
+use GraphLib\Graph\Graph;
 use GraphLib\Nodes\AbsFloat;
 use GraphLib\Nodes\AddFloats;
 use GraphLib\Nodes\AddVector3;

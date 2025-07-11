@@ -1,6 +1,6 @@
 <?php
 
-namespace GraphLib;
+namespace GraphLib\Graph;
 
 use GraphLib\Components\LatchComponent;
 use GraphLib\Components\RegisterComponent;
