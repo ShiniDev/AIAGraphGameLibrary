@@ -1,6 +1,6 @@
-# IndieDev500 Game Graph Library
+# AIA Graph Game Library
 
-This library provides a PHP-based graph system for defining game logic, particularly useful for visual scripting or node-based game mechanics. It allows for the programmatic creation of nodes, ports, and connections which can be serialized to JSON.
+This library provides a PHP-based library for AIA game's graph system for defining game logic, particularly useful for visual scripting or node-based game mechanics. It allows for the programmatic creation of nodes, ports, and connections which can be serialized to JSON.
 
 Made with the assistance of Google's Gemini AI.
 
