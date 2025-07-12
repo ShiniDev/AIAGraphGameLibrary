@@ -20,6 +20,7 @@ const STAT_JUMP = 1;
 
 $slimeHelper->initializeSlime("ShiniDev", "Philippines", "Light Grey", STAT_SPEED, STAT_ACCELERATION, STAT_JUMP);
 $ballPosition = $slimeHelper->createSlimeGetVector3(GetSlimeVector3Modifier::BALL_POSITION)->getOutput();
+$selfPosition = $slimeHelper->createSlimeGetVector3(GetSlimeVector3Modifier::SELF_POSITION)->getOutput();
 
 // Jumping logic
 $distance = $mathHelper->getDistance($ballPosition, $selfPosition);

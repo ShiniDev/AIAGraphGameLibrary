@@ -1,6 +1,6 @@
 <?php
 
-namespace GraphLib;
+require_once "../vendor/autoload.php";
 
 use GraphLib\Enums\FloatOperator;
 use GraphLib\Enums\GetSlimeVector3Modifier;
