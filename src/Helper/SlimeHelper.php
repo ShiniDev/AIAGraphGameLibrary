@@ -22,6 +22,8 @@ class SlimeHelper
     /** @var ComputerHelper Helper for memory and logic circuits */
     protected ComputerHelper $computer;
 
+    public const GRAVITY = -17;
+
     public function __construct(Graph $graph)
     {
         $this->graph = $graph;

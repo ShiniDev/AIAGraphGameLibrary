@@ -211,4 +211,80 @@ class MathHelperV2 extends MathHelper
         $alignment = $this->getAlignmentValue($a, $b);
         return $this->getAcosValue($alignment);
     }
+
+    /**
+     * Creates a node graph to solve a quadratic equation (ax² + bx + c = 0).
+     *
+     * This function builds the necessary math nodes to implement the quadratic formula.
+     * It is essential for calculating projectile trajectories. The function returns both
+     * potential roots of the equation.
+     *
+     * @param Port|float $a The 'a' coefficient of the equation.
+     * @param Port|float $b The 'b' coefficient of the equation.
+     * @param Port|float $c The 'c' coefficient of the equation.
+     * @return Port[] An associative array containing the two roots: ['root_pos' => Port, 'root_neg' => Port].
+     */
+    public function getQuadraticFormula(Port|float $a, Port|float $b, Port|float $c): array
+    {
+        $a = is_float($a) ? $this->getFloat($a) : $a;
+        $b = is_float($b) ? $this->getFloat($b) : $b;
+        $c = is_float($c) ? $this->getFloat($c) : $c;
+
+        // Calculate the discriminant: b^2 - 4ac
+        $bSquared = $this->getSquareValue($b);
+        $fourAC = $this->getMultiplyValue(4.0, ($this->getMultiplyValue($a, $c)));
+        $discriminant = $this->getSubtractValue($bSquared, $fourAC);
+
+        // Get the square root of the discriminant.
+        // Note: To prevent errors, you may want to clamp the discriminant to a minimum of 0 before this step.
+        $discriminant = $this->getMaxValue(0, $discriminant);
+        $discriminantSqrt = $this->getSqrtValue($discriminant);
+
+        // --- Completion Start ---
+
+        // Calculate the two numerators: -b ± sqrt(discriminant)
+        $negB = $this->getInverseValue($b);
+        $numerator_pos = $this->getAddValue($negB, $discriminantSqrt);
+        $numerator_neg = $this->getSubtractValue($negB, $discriminantSqrt);
+
+        // Calculate the denominator: 2a
+        $denominator = $this->getMultiplyValue(2.0, $a);
+
+        // Calculate the final roots
+        $root1 = $this->getDivideValue($numerator_pos, $denominator);
+        $root2 = $this->getDivideValue($numerator_neg, $denominator);
+
+        // Return both roots in an associative array for clarity
+        return [
+            'root_pos' => $root1, // The root from the (-b + sqrt) case
+            'root_neg' => $root2  // The root from the (-b - sqrt) case
+        ];
+    }
+
+    /**
+     * Creates a node graph to calculate a variable power (base^exponent).
+     *
+     * This implements the identity: x^t = exp(t * log(x)).
+     * It is essential for when the exponent is not a fixed integer.
+     *
+     * @param Port|float $base The base of the operation.
+     * @param Port|float $exponent The exponent 't'.
+     * @return Port The port representing the result of base^exponent.
+     */
+    public function getVariablePowerValue(Port|float $base, Port|float $exponent): Port
+    {
+        $basePort = is_float($base) ? $this->getFloat($base) : $base;
+        $exponentPort = is_float($exponent) ? $this->getFloat($exponent) : $exponent;
+
+        // 1. Calculate the natural logarithm of the base: log(base)
+        $lnBase = $this->getLogValue($basePort);
+
+        // 2. Multiply by the exponent: exponent * log(base)
+        $product = $this->getMultiplyValue($exponentPort, $lnBase);
+
+        // 3. Calculate the exponential of the result: exp(...)
+        $result = $this->getExpValue($product);
+
+        return $result;
+    }
 }

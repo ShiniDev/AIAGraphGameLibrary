@@ -114,4 +114,22 @@ trait SlimeFactory
     {
         return new DebugDrawDisc($this->graph);
     }
+
+    public function debugDrawLine(Port $start, Port $end, float $thickness, string $color)
+    {
+        $line = $this->createDebugDrawLine();
+        $line->connectStart($start);
+        $line->connectEnd($end);
+        $line->connectThickness($this->getFloat($thickness));
+        $line->connectColor($this->createColor($color)->getOutput());
+    }
+
+    public function debugDrawDisc(Port $center, float $radius, float $thickness, string $color)
+    {
+        $disc = $this->createDebugDrawDisc();
+        $disc->connectCenter($center);
+        $disc->connectRadius($this->getFloat($radius));
+        $disc->connectThickness($this->getFloat($thickness));
+        $disc->connectColor($this->createColor($color)->getOutput());
+    }
 }
