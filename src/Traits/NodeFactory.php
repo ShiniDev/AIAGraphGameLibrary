@@ -6,6 +6,12 @@ use GraphLib\Enums\BooleanOperator;
 use GraphLib\Enums\ConditionalBranch;
 use GraphLib\Enums\FloatOperator;
 use GraphLib\Enums\GetKartVector3Modifier;
+use GraphLib\Enums\GetSlimeVector3Modifier;
+use GraphLib\Enums\OperationModifier;
+use GraphLib\Enums\RelativePositionModifier;
+use GraphLib\Enums\VolleyballGetBoolModifier;
+use GraphLib\Enums\VolleyballGetFloatModifier;
+use GraphLib\Enums\VolleyballGetTransformModifier;
 use GraphLib\Graph\Graph;
 use GraphLib\Graph\Port;
 use GraphLib\Nodes\AbsFloat;
@@ -216,17 +222,17 @@ trait NodeFactory
         return new ConstructSlimeProperties($this->graph);
     }
 
-    public function createVolleyballGetBool(string $modifier = ''): VolleyballGetBool
+    public function createVolleyballGetBool(VolleyballGetBoolModifier $modifier): VolleyballGetBool
     {
         return new VolleyballGetBool($this->graph, $modifier);
     }
 
-    public function createVolleyballGetTransform(string $modifier = ''): VolleyballGetTransform
+    public function createVolleyballGetTransform(VolleyballGetTransformModifier $modifier): VolleyballGetTransform
     {
         return new VolleyballGetTransform($this->graph, $modifier);
     }
 
-    public function createRelativePosition(string $modifier = ''): RelativePosition
+    public function createRelativePosition(RelativePositionModifier $modifier): RelativePosition
     {
         return new RelativePosition($this->graph, $modifier);
     }
@@ -267,17 +273,17 @@ trait NodeFactory
         return new ConditionalSetFloatV2($this->graph, $modifier, $branch);
     }
 
-    public function createSlimeGetVector3(string $modifier = ''): SlimeGetVector3
+    public function createSlimeGetVector3(GetSlimeVector3Modifier $modifier): SlimeGetVector3
     {
         return new SlimeGetVector3($this->graph, $modifier);
     }
 
-    public function createOperation(string $modifier = ''): Operation
+    public function createOperation(OperationModifier $modifier): Operation
     {
         return new Operation($this->graph, $modifier);
     }
 
-    public function createVolleyballGetFloat(string $modifier = ''): VolleyballGetFloat
+    public function createVolleyballGetFloat(VolleyballGetFloatModifier $modifier): VolleyballGetFloat
     {
         return new VolleyballGetFloat($this->graph, $modifier);
     }
