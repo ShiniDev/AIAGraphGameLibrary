@@ -2,34 +2,42 @@
 
 namespace GraphLib\Helper;
 
+use GraphLib\Enums\BooleanOperator;
+use GraphLib\Enums\FloatOperator;
+use GraphLib\Enums\GetSlimeVector3Modifier;
+use GraphLib\Enums\RelativePositionModifier;
+use GraphLib\Enums\VolleyballGetBoolModifier;
+use GraphLib\Enums\VolleyballGetFloatModifier;
+use GraphLib\Enums\VolleyballGetTransformModifier;
 use GraphLib\Graph\Graph;
 use GraphLib\Graph\Port;
-use GraphLib\Nodes\ConstructSlimeProperties;
-use GraphLib\Traits\NodeFactory;
 use GraphLib\Traits\SlimeFactory;
 
 class SlimeHelper
 {
     use SlimeFactory;
 
+    /** @var MathHelperV2 Helper for complex math operations */
+    protected MathHelperV2 $math;
+    /** @var ComputerHelper Helper for memory and logic circuits */
+    protected ComputerHelper $computer;
+
     public function __construct(Graph $graph)
     {
         $this->graph = $graph;
+        $this->math = new MathHelperV2($graph);
+        $this->computer = new ComputerHelper($graph);
     }
 
     public function initializeSlime(string $name, string $country, string $color, float $speed, float $acceleration, float $jumping)
     {
         $slime = $this->createConstructSlimeProperties();
-
-        // 2. Create the "constant" value nodes from the parameters
-        $nameNode         = $this->createString($name);
-        $countryNode      = $this->createCountry($country);
-        $colorNode        = $this->createColor($color);
-        $topSpeedNode     = $this->createStat($speed);
+        $nameNode = $this->createString($name);
+        $countryNode = $this->createCountry($country);
+        $colorNode = $this->createColor($color);
+        $topSpeedNode = $this->createStat($speed);
         $accelerationNode = $this->createStat($acceleration);
-        $jumpingNode      = $this->createStat($jumping);
-
-        // 3. Connect the constant nodes to the properties constructor
+        $jumpingNode = $this->createStat($jumping);
         $slime->connectInputString($nameNode->getOutput());
         $slime->connectInputCountry($countryNode->getOutput());
         $slime->connectInputColor($colorNode->getOutput());
