@@ -53,75 +53,24 @@ class MathHelper
         return $this->getMultiplyValue($basePort, $basePort);
     }
 
-    /**
-     * Creates a "Cube" node structure (x³).
-     */
-    public function getCubeValue(float|Port $base): Port
+    public function getPowerValue(float|Port $base, int $exponent): Port
     {
+        if ($exponent < 2) {
+            throw new \InvalidArgumentException("Exponent must be 2 or greater.");
+        }
+
         $basePort = is_float($base) ? $this->getFloat($base) : $base;
-        $square = $this->getSquareValue($basePort);
-        return $this->getMultiplyValue($square, $basePort);
+
+        // Base case: x^2
+        $result = $this->getMultiplyValue($basePort, $basePort);
+
+        for ($i = 3; $i <= $exponent; $i++) {
+            $result = $this->getMultiplyValue($result, $basePort);
+        }
+
+        return $result;
     }
 
-    /**
-     * Creates a "Power 4" node structure (x⁴).
-     */
-    public function getPower4Value(float|Port $base): Port
-    {
-        $basePort = is_float($base) ? $this->getFloat($base) : $base;
-        $cube = $this->getCubeValue($basePort);
-        return $this->getMultiplyValue($cube, $basePort);
-    }
-
-    /**
-     * Creates a "Power 5" node structure (x⁵).
-     */
-    public function getPower5Value(float|Port $base): Port
-    {
-        $basePort = is_float($base) ? $this->getFloat($base) : $base;
-        $power4 = $this->getPower4Value($basePort);
-        return $this->getMultiplyValue($power4, $basePort);
-    }
-
-    /**
-     * Creates a "Power 6" node structure (x⁶).
-     */
-    public function getPower6Value(float|Port $base): Port
-    {
-        $basePort = is_float($base) ? $this->getFloat($base) : $base;
-        $power5 = $this->getPower5Value($basePort);
-        return $this->getMultiplyValue($power5, $basePort);
-    }
-
-    /**
-     * Creates a "Power 7" node structure (x⁷).
-     */
-    public function getPower7Value(float|Port $base): Port
-    {
-        $basePort = is_float($base) ? $this->getFloat($base) : $base;
-        $power6 = $this->getPower6Value($basePort);
-        return $this->getMultiplyValue($power6, $basePort);
-    }
-
-    /**
-     * Creates a "Power 8" node structure (x⁸).
-     */
-    public function getPower8Value(float|Port $base): Port
-    {
-        $basePort = is_float($base) ? $this->getFloat($base) : $base;
-        $power7 = $this->getPower7Value($basePort);
-        return $this->getMultiplyValue($power7, $basePort);
-    }
-
-    /**
-     * Creates a "Power 9" node structure (x⁹).
-     */
-    public function getPower9Value(float|Port $base): Port
-    {
-        $basePort = is_float($base) ? $this->getFloat($base) : $base;
-        $power8 = $this->getPower8Value($basePort);
-        return $this->getMultiplyValue($power8, $basePort);
-    }
 
     /**
      * Calculates the square root by unrolling the Newton-Raphson method.
@@ -164,8 +113,8 @@ class MathHelper
     public function getSinValue(float|Port $angleRadians): Port
     {
         $term1 = $angleRadians;
-        $term2 = $this->getDivideValue($this->getCubeValue($angleRadians), 6.0);
-        $term3 = $this->getDivideValue($this->getPower5Value($angleRadians), 120.0);
+        $term2 = $this->getDivideValue($this->getPowerValue($angleRadians, 3), 6.0);
+        $term3 = $this->getDivideValue($this->getPowerValue($angleRadians, 5), 120.0);
 
         $sum1 = $this->getSubtractValue($term1, $term2);
         return $this->getAddValue($sum1, $term3);
@@ -179,7 +128,7 @@ class MathHelper
     {
         $term1 = $this->getFloat(1.0);
         $term2 = $this->getDivideValue($this->getSquareValue($angleRadians), 2.0);
-        $term3 = $this->getDivideValue($this->getPower4Value($angleRadians), 24.0);
+        $term3 = $this->getDivideValue($this->getPowerValue($angleRadians, 4), 24.0);
 
         $sum1 = $this->getSubtractValue($term1, $term2);
         return $this->getAddValue($sum1, $term3);
@@ -199,22 +148,22 @@ class MathHelper
         $term1 = $valuePort;
 
         // Term 2: -x³/3
-        $cube = $this->getCubeValue($valuePort);
+        $cube = $this->getPowerValue($valuePort, 3);
         $term2 = $this->getDivideValue($cube, 3.0);
         $sum = $this->getSubtractValue($term1, $term2);
 
         // Term 3: +x⁵/5
-        $power5 = $this->getPower5Value($valuePort);
+        $power5 = $this->getPowerValue($valuePort, 5);
         $term3 = $this->getDivideValue($power5, 5.0);
         $sum = $this->getAddValue($sum, $term3);
 
         // Term 4: -x⁷/7
-        $power7 = $this->getPower7Value($valuePort);
+        $power7 = $this->getPowerValue($valuePort, 7);
         $term4 = $this->getDivideValue($power7, 7.0);
         $sum = $this->getSubtractValue($sum, $term4);
 
         // Term 5: +x⁹/9
-        $power9 = $this->getPower9Value($valuePort);
+        $power9 = $this->getPowerValue($valuePort, 9);
         $term5 = $this->getDivideValue($power9, 9.0);
         $sum = $this->getAddValue($sum, $term5);
 
@@ -235,24 +184,24 @@ class MathHelper
         $term1 = $valuePort;
 
         // Term 2: (1/2)*(x³/3) = x³/6
-        $cube = $this->getCubeValue($valuePort);
+        $cube = $this->getPowerValue($valuePort, 3);
         $term2 = $this->getDivideValue($cube, 6.0);
         $sum = $this->getAddValue($term1, $term2);
 
         // Term 3: (1*3)/(2*4)*(x⁵/5) = 3x⁵/40
-        $power5 = $this->getPower5Value($valuePort);
+        $power5 = $this->getPowerValue($valuePort, 5);
         $term3Numerator = $this->getMultiplyValue(3.0, $power5);
         $term3 = $this->getDivideValue($term3Numerator, 40.0);
         $sum = $this->getAddValue($sum, $term3);
 
         // Term 4: (1*3*5)/(2*4*6)*(x⁷/7) = 15x⁷/336
-        $power7 = $this->getPower7Value($valuePort);
+        $power7 = $this->getPowerValue($valuePort, 7);
         $term4Numerator = $this->getMultiplyValue(15.0, $power7);
         $term4 = $this->getDivideValue($term4Numerator, 336.0); // Or $this->getDivideValue($this->getMultiplyValue(5.0, $power7), 112.0);
         $sum = $this->getAddValue($sum, $term4);
 
         // Term 5: (1*3*5*7)/(2*4*6*8)*(x⁹/9) = 105x⁹/3456
-        $power9 = $this->getPower9Value($valuePort);
+        $power9 = $this->getPowerValue($valuePort, 9);
         $term5Numerator = $this->getMultiplyValue(105.0, $power9);
         $term5 = $this->getDivideValue($term5Numerator, 3456.0); // Or $this->getDivideValue($this->getMultiplyValue(35.0, $power9), 1152.0);
         $sum = $this->getAddValue($sum, $term5);
@@ -696,7 +645,7 @@ class MathHelper
         $xPort = is_float($x) ? $this->getFloat($x) : $x;
 
         // Part 1: Calculate the inner series (x + x³/6)
-        $x_cubed = $this->getCubeValue($xPort);
+        $x_cubed = $this->getPowerValue($xPort, 3);
         $x_cubed_div_6 = $this->getDivideValue($x_cubed, 6.0);
         $inner_series = $this->getAddValue($xPort, $x_cubed_div_6);
 

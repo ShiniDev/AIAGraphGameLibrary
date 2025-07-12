@@ -333,4 +333,17 @@ trait NodeFactory
             ->connectFloat($floatPort)
             ->getOutput();
     }
+
+    public function getConditionalBool(Port $condition, Port $ifTrue, Port $ifFalse): Port
+    {
+        // Get the inverse of the condition for the 'false' path
+        $notCondition = $this->getInverseBool($condition);
+
+        // Calculate the two possible paths
+        $truePath = $this->compareBool(BooleanOperator::AND, $ifTrue, $condition);
+        $falsePath = $this->compareBool(BooleanOperator::AND, $ifFalse, $notCondition);
+
+        // Combine the paths: one will be its input value, the other will be false.
+        return $this->compareBool(BooleanOperator::OR, $truePath, $falsePath);
+    }
 }
