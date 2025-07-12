@@ -2,6 +2,7 @@
 
 namespace GraphLib\Nodes;
 
+use GraphLib\Enums\VolleyballGetBoolModifier;
 use GraphLib\Graph\Color;
 use GraphLib\Graph\Graph;
 use GraphLib\Graph\Node;
@@ -12,9 +13,9 @@ class VolleyballGetBool extends Node
 {
     public Port $outputBool;
 
-    public function __construct(Graph $graph, string $modifier = '')
+    public function __construct(Graph $graph, VolleyballGetBoolModifier $modifier = VolleyballGetBoolModifier::SELF_CAN_JUMP)
     {
-        parent::__construct('VolleyballGetBool', $modifier);
+        parent::__construct('VolleyballGetBool', $modifier->value);
 
         $this->outputBool = new Port($graph, 'Bool1', 'bool', 1, 0, new Color(0.5905684232711792, 0.0, 0.8666666746139526));
 

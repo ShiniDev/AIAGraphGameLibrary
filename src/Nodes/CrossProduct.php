@@ -20,7 +20,7 @@ class CrossProduct extends Node
 
         $this->inputVector3_1 = new Port($graph, 'Vector31', 'vector3', 0, 1, new Color(0.8666667342185974, 0.43137258291244509, 0.0));
         $this->inputVector3_2 = new Port($graph, 'Vector32', 'vector3', 0, 1, new Color(0.8666667342185974, 0.43137258291244509, 0.0));
-        $this->outputVector3 = new Port($graph, 'Vector3', 'vector3', 1, 0, new Color(0.8666666746139526, 0.4317798912525177, 0.0));
+        $this->outputVector3 = new Port($graph, 'Vector31', 'vector3', 1, 0, new Color(0.8666666746139526, 0.4317798912525177, 0.0));
 
         $this->addPort($this->inputVector3_1, new Vector2(-266.1, -84.2));
         $this->addPort($this->inputVector3_2, new Vector2(-266.1, -130.0));

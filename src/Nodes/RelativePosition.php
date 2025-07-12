@@ -2,6 +2,7 @@
 
 namespace GraphLib\Nodes;
 
+use GraphLib\Enums\RelativePositionModifier;
 use GraphLib\Graph\Color;
 use GraphLib\Graph\Graph;
 use GraphLib\Graph\Node;
@@ -13,9 +14,9 @@ class RelativePosition extends Node
     public Port $inputTransform;
     public Port $outputVector3;
 
-    public function __construct(Graph $graph, string $modifier = '')
+    public function __construct(Graph $graph, RelativePositionModifier $modifier = RelativePositionModifier::SELF)
     {
-        parent::__construct('RelativePosition', $modifier);
+        parent::__construct('RelativePosition', $modifier->value);
 
         $this->inputTransform = new Port($graph, 'Transform1', 'transform', 0, 1, new Color(0.8666667342185974, 0.7019608020782471, 0.0));
         $this->outputVector3 = new Port($graph, 'Vector31', 'vector3', 1, 0, new Color(0.8666666746139526, 0.4317798912525177, 0.0));

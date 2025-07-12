@@ -2,6 +2,7 @@
 
 namespace GraphLib\Nodes;
 
+use GraphLib\Enums\GetSlimeVector3Modifier;
 use GraphLib\Graph\Color;
 use GraphLib\Graph\Graph;
 use GraphLib\Graph\Node;
@@ -12,9 +13,9 @@ class SlimeGetVector3 extends Node
 {
     public Port $outputVector3;
 
-    public function __construct(Graph $graph, string $modifier = '')
+    public function __construct(Graph $graph, GetSlimeVector3Modifier $modifier = GetSlimeVector3Modifier::SELF_POSITION)
     {
-        parent::__construct('SlimeGetVector3', $modifier);
+        parent::__construct('SlimeGetVector3', $modifier->value);
 
         $this->outputVector3 = new Port($graph, 'Vector31', 'vector3', 1, 0, new Color(0.8666666746139526, 0.4317798912525177, 0.0));
 

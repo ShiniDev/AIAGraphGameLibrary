@@ -2,6 +2,7 @@
 
 namespace GraphLib\Nodes;
 
+use GraphLib\Enums\OperationModifier;
 use GraphLib\Graph\Color;
 use GraphLib\Graph\Graph;
 use GraphLib\Graph\Node;
@@ -13,9 +14,9 @@ class Operation extends Node
     public Port $inputFloat;
     public Port $outputFloat;
 
-    public function __construct(Graph $graph, string $modifier = '')
+    public function __construct(Graph $graph, OperationModifier $modifier = OperationModifier::ABS)
     {
-        parent::__construct('Operation', $modifier);
+        parent::__construct('Operation', $modifier->value);
 
         $this->inputFloat = new Port($graph, 'Float1', 'float', 0, 1, new Color(0.8666666746139526, 0.8078431487083435, 0.0));
         $this->outputFloat = new Port($graph, 'Float1', 'float', 1, 0, new Color(0.8666666746139526, 0.8068594932556152, 0.0));

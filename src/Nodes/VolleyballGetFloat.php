@@ -2,6 +2,7 @@
 
 namespace GraphLib\Nodes;
 
+use GraphLib\Enums\VolleyballGetFloatModifier;
 use GraphLib\Graph\Color;
 use GraphLib\Graph\Graph;
 use GraphLib\Graph\Node;
@@ -12,9 +13,9 @@ class VolleyballGetFloat extends Node
 {
     public Port $outputFloat;
 
-    public function __construct(Graph $graph, string $modifier = '')
+    public function __construct(Graph $graph, VolleyballGetFloatModifier $modifier = VolleyballGetFloatModifier::DELTA_TIME)
     {
-        parent::__construct('VolleyballGetFloat', $modifier);
+        parent::__construct('VolleyballGetFloat', $modifier->value);
 
         $this->outputFloat = new Port($graph, 'Float1', 'float', 1, 0, new Color(0.8666666746139526, 0.8068594932556152, 0.0));
 
