@@ -4,6 +4,8 @@ use GraphLib\Enums\BooleanOperator;
 use GraphLib\Enums\FloatOperator;
 use GraphLib\Enums\GetKartVector3Modifier;
 use GraphLib\Graph\Graph;
+use GraphLib\Helper\KartHelper;
+use GraphLib\Helper\NodeHelper;
 
 require_once './vendor/autoload.php';
 
@@ -29,66 +31,68 @@ const STEERING_SENSITIVITY = 10;
 const STEERING_THROTTLE_SMOOTHING = .4;
 
 $graph = new Graph();
+$nodeHelper = new NodeHelper($graph);
+$kartHelper = new KartHelper($graph);
 
 // Initialize the graph with the kart and raycasts
-$kart = $graph->initializeKart(NAME, COUNTRY, COLOR, STAT_TOPSPEED, STAT_ACCELERATION, STAT_HANDLING);
-$leftRaycast = $graph->initializeSphereCast(LEFT_RIGHT_RAYCAST_SIZE, LEFT_RIGHT_RAYCAST_DISTANCE);
-$rightRaycast = $graph->initializeSphereCast(LEFT_RIGHT_RAYCAST_SIZE, LEFT_RIGHT_RAYCAST_DISTANCE);
-$middleRaycast = $graph->initializeSphereCast(MIDDLE_RAYCAST_SIZE, MIDDLE_RAYCAST_DISTANCE);
+$kart = $kartHelper->initializeKart(NAME, COUNTRY, COLOR, STAT_TOPSPEED, STAT_ACCELERATION, STAT_HANDLING);
+$leftRaycast = $kartHelper->initializeSphereCast(LEFT_RIGHT_RAYCAST_SIZE, LEFT_RIGHT_RAYCAST_DISTANCE);
+$rightRaycast = $kartHelper->initializeSphereCast(LEFT_RIGHT_RAYCAST_SIZE, LEFT_RIGHT_RAYCAST_DISTANCE);
+$middleRaycast = $kartHelper->initializeSphereCast(MIDDLE_RAYCAST_SIZE, MIDDLE_RAYCAST_DISTANCE);
 $kart->connectSpherecastMiddle($middleRaycast->getOutput());
 $kart->connectSpherecastTop($leftRaycast->getOutput());
 $kart->connectSpherecastBottom($rightRaycast->getOutput());
-$hitInfoLeft = $graph->createHitInfo()->connectRaycastHit($kart->getRaycastHitTop());
-$hitInfoRight = $graph->createHitInfo()->connectRaycastHit($kart->getRaycastHitBottom());
-$hitInfoMiddle = $graph->createHitInfo()->connectRaycastHit($kart->getRaycastHitMiddle());
+$hitInfoLeft = $nodeHelper->createHitInfo()->connectRaycastHit($kart->getRaycastHitTop());
+$hitInfoRight = $nodeHelper->createHitInfo()->connectRaycastHit($kart->getRaycastHitBottom());
+$hitInfoMiddle = $nodeHelper->createHitInfo()->connectRaycastHit($kart->getRaycastHitMiddle());
 // End
 
 // Kart Data
 $isLeftHit = $hitInfoLeft->getHitOutput();
 $isRightHit = $hitInfoRight->getHitOutput();
 $isMiddleHit = $hitInfoMiddle->getHitOutput();
-$isLeftNotHit = $graph->compareBool(BooleanOperator::NOT, $isLeftHit);
-$isRightNotHit = $graph->compareBool(BooleanOperator::NOT, $isRightHit);
-$isMiddleNotHit = $graph->compareBool(BooleanOperator::NOT, $isMiddleHit);
-$isBothSidesHit = $graph->compareBool(BooleanOperator::AND, $isLeftHit, $isRightHit);
-$isAllSidesHit = $graph->compareBool(BooleanOperator::AND, $isBothSidesHit, $isMiddleHit);
-$isOneSideNotHit = $graph->compareBool(BooleanOperator::NOT, $isBothSidesHit);
-$leftDistance = $graph->getConditionalFloat($isLeftHit, $hitInfoLeft->getDistanceOutput(), $graph->getFloat(LEFT_RIGHT_RAYCAST_DISTANCE));
-$rightDistance = $graph->getConditionalFloat($isRightHit, $hitInfoRight->getDistanceOutput(), $graph->getFloat(LEFT_RIGHT_RAYCAST_DISTANCE));
-$middleDistance = $graph->getConditionalFloat($isMiddleHit, $hitInfoMiddle->getDistanceOutput(), $graph->getFloat(MIDDLE_RAYCAST_DISTANCE));
+$isLeftNotHit = $nodeHelper->compareBool(BooleanOperator::NOT, $isLeftHit);
+$isRightNotHit = $nodeHelper->compareBool(BooleanOperator::NOT, $isRightHit);
+$isMiddleNotHit = $nodeHelper->compareBool(BooleanOperator::NOT, $isMiddleHit);
+$isBothSidesHit = $nodeHelper->compareBool(BooleanOperator::AND, $isLeftHit, $isRightHit);
+$isAllSidesHit = $nodeHelper->compareBool(BooleanOperator::AND, $isBothSidesHit, $isMiddleHit);
+$isOneSideNotHit = $nodeHelper->compareBool(BooleanOperator::NOT, $isBothSidesHit);
+$leftDistance = $nodeHelper->getConditionalFloat($isLeftHit, $hitInfoLeft->getDistanceOutput(), $nodeHelper->getFloat(LEFT_RIGHT_RAYCAST_DISTANCE));
+$rightDistance = $nodeHelper->getConditionalFloat($isRightHit, $hitInfoRight->getDistanceOutput(), $nodeHelper->getFloat(LEFT_RIGHT_RAYCAST_DISTANCE));
+$middleDistance = $nodeHelper->getConditionalFloat($isMiddleHit, $hitInfoMiddle->getDistanceOutput(), $nodeHelper->getFloat(MIDDLE_RAYCAST_DISTANCE));
 // End
 
-$shouldSideAdjustRight = $graph->compareFloats(FloatOperator::LESS_THAN, $leftDistance, $graph->getFloat(EMERGENCY_SIDE_ADJUSTMENT_DISTANCE));
-$shouldSideAdjustLeft = $graph->compareFloats(FloatOperator::LESS_THAN, $rightDistance, $graph->getFloat(EMERGENCY_SIDE_ADJUSTMENT_DISTANCE));
+$shouldSideAdjustRight = $nodeHelper->compareFloats(FloatOperator::LESS_THAN, $leftDistance, $nodeHelper->getFloat(EMERGENCY_SIDE_ADJUSTMENT_DISTANCE));
+$shouldSideAdjustLeft = $nodeHelper->compareFloats(FloatOperator::LESS_THAN, $rightDistance, $nodeHelper->getFloat(EMERGENCY_SIDE_ADJUSTMENT_DISTANCE));
 
-$steering = $graph->getSubtractValue($rightDistance, $leftDistance);
-$normalizedSteering = $graph->getDivideValue($steering, $graph->getFloat(LEFT_RIGHT_RAYCAST_DISTANCE));
-$baseSteering = $graph->getDivideValue($steering, $graph->getFloat(LEFT_RIGHT_RAYCAST_DISTANCE));
-$smoothSteer = $graph->getSubtractValue($graph->getFloat(1), $graph->getAbsValue($baseSteering));
-$smoothSteer = $graph->getMultiplyValue($smoothSteer, $graph->getFloat(STEERING_SENSITIVITY));
-$smoothSteer = $graph->getAddValue($graph->getFloat(1), $smoothSteer);
-$steering = $graph->getMultiplyValue($baseSteering, $smoothSteer);
+$steering = $nodeHelper->getSubtractValue($rightDistance, $leftDistance);
+$normalizedSteering = $nodeHelper->getDivideValue($steering, $nodeHelper->getFloat(LEFT_RIGHT_RAYCAST_DISTANCE));
+$baseSteering = $nodeHelper->getDivideValue($steering, $nodeHelper->getFloat(LEFT_RIGHT_RAYCAST_DISTANCE));
+$smoothSteer = $nodeHelper->getSubtractValue($nodeHelper->getFloat(1), $nodeHelper->getAbsValue($baseSteering));
+$smoothSteer = $nodeHelper->getMultiplyValue($smoothSteer, $nodeHelper->getFloat(STEERING_SENSITIVITY));
+$smoothSteer = $nodeHelper->getAddValue($nodeHelper->getFloat(1), $smoothSteer);
+$steering = $nodeHelper->getMultiplyValue($baseSteering, $smoothSteer);
 
-// $brakingThrottle = $graph->getDivideValue($middleDistance, $graph->getFloat(MIDDLE_RAYCAST_DISTANCE));
-// $brakingThrottle = $graph->getSubtractValue($graph->getFloat(1), $brakingThrottle);
-// $brakingThrottle = $graph->getMultiplyValue($graph->getFloat(-1), $brakingThrottle);
-// $brakingThrottle = $graph->getMultiplyValue($graph->getFloat(BRAKE_RATIO), $brakingThrottle);
-// $graph->debug($brakingThrottle);
-$isEmergencyBrake = $graph->compareFloats(FloatOperator::LESS_THAN, $middleDistance, $graph->getFloat(EMERGENCY_BRAKE_DISTANCE));
-// $isEmergencyBrake = $graph->compareBool(BooleanOperator::AND, $isEmergencyBrake, $isAllSidesHit);
-$throttle = $graph->getFloat(1);
+// $brakingThrottle = $nodeHelper->getDivideValue($middleDistance, $nodeHelper->getFloat(MIDDLE_RAYCAST_DISTANCE));
+// $brakingThrottle = $nodeHelper->getSubtractValue($nodeHelper->getFloat(1), $brakingThrottle);
+// $brakingThrottle = $nodeHelper->getMultiplyValue($nodeHelper->getFloat(-1), $brakingThrottle);
+// $brakingThrottle = $nodeHelper->getMultiplyValue($nodeHelper->getFloat(BRAKE_RATIO), $brakingThrottle);
+// $nodeHelper->debug($brakingThrottle);
+$isEmergencyBrake = $nodeHelper->compareFloats(FloatOperator::LESS_THAN, $middleDistance, $nodeHelper->getFloat(EMERGENCY_BRAKE_DISTANCE));
+// $isEmergencyBrake = $nodeHelper->compareBool(BooleanOperator::AND, $isEmergencyBrake, $isAllSidesHit);
+$throttle = $nodeHelper->getFloat(1);
 
-// $throttle = $graph->getConditionalFloat($isMiddleHit, $brakingThrottle, $fullThrottle);
-$throttle = $graph->getSubtractValue($throttle, $graph->getMultiplyValue($graph->getAbsValue($baseSteering), $graph->getFloat(STEERING_THROTTLE_SMOOTHING)));
-$throttle = $graph->getConditionalFloat($isEmergencyBrake, $graph->getFloat(EMERGENCY_BRAKE_FORCE), $throttle);
+// $throttle = $nodeHelper->getConditionalFloat($isMiddleHit, $brakingThrottle, $fullThrottle);
+$throttle = $nodeHelper->getSubtractValue($throttle, $nodeHelper->getMultiplyValue($nodeHelper->getAbsValue($baseSteering), $nodeHelper->getFloat(STEERING_THROTTLE_SMOOTHING)));
+$throttle = $nodeHelper->getConditionalFloat($isEmergencyBrake, $nodeHelper->getFloat(EMERGENCY_BRAKE_FORCE), $throttle);
 
-$steering = $graph->getConditionalFloat($shouldSideAdjustLeft, $graph->getAddValue($steering, $graph->getFloat(-1)), $steering);
-$steering = $graph->getConditionalFloat($shouldSideAdjustRight, $graph->getAddValue($steering, $graph->getFloat(1)), $steering);
+$steering = $nodeHelper->getConditionalFloat($shouldSideAdjustLeft, $nodeHelper->getAddValue($steering, $nodeHelper->getFloat(-1)), $steering);
+$steering = $nodeHelper->getConditionalFloat($shouldSideAdjustRight, $nodeHelper->getAddValue($steering, $nodeHelper->getFloat(1)), $steering);
 
-$controller = $graph->createCarController();
+$controller = $nodeHelper->createCarController();
 $controller->connectAcceleration($throttle);
 $controller->connectSteering($steering);
 
-$graph->debug($steering, $throttle);
+$nodeHelper->debug($steering, $throttle);
 
 $graph->toTxt('C:\Users\Haba\Downloads\IndieDev500_v0_8\AIComp_Data\Saves\shini.txt');

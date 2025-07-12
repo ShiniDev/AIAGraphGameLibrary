@@ -7,6 +7,7 @@ use GraphLib\Enums\ConditionalBranch;
 use GraphLib\Enums\FloatOperator;
 use GraphLib\Enums\GetKartVector3Modifier;
 use GraphLib\Graph\Graph;
+use GraphLib\Graph\Port;
 use GraphLib\Nodes\AbsFloat;
 use GraphLib\Nodes\AddFloats;
 use GraphLib\Nodes\AddVector3;
@@ -187,5 +188,147 @@ trait NodeFactory
     public function createVector3Split(): Vector3Split
     {
         return new Vector3Split($this->graph);
+    }
+
+    // Moved other basic node functionalities here to be easily used by helpers.
+    public function getAddValue(float|Port $portTop, float|Port $portBottom): Port
+    {
+        $portTopPort = is_float($portTop) ? $this->getFloat($portTop) : $portTop;
+        $portBottomPort = is_float($portBottom) ? $this->getFloat($portBottom) : $portBottom;
+
+        $addFloats = $this->createAddFloats();
+        $addFloats->connectInputA($portTopPort);
+        $addFloats->connectInputB($portBottomPort);
+        return $addFloats->getOutput();
+    }
+
+    public function getSubtractValue(float|Port $portTop, float|Port $portBottom): Port
+    {
+        $portTopPort = is_float($portTop) ? $this->getFloat($portTop) : $portTop;
+        $portBottomPort = is_float($portBottom) ? $this->getFloat($portBottom) : $portBottom;
+
+        $subtractFloats = $this->createSubtractFloats();
+        $subtractFloats->connectInputA($portTopPort);
+        $subtractFloats->connectInputB($portBottomPort);
+        return $subtractFloats->getOutput();
+    }
+
+    public function getMultiplyValue(float|Port $portTop, float|Port $portBottom): Port
+    {
+        $portTopPort = is_float($portTop) ? $this->getFloat($portTop) : $portTop;
+        $portBottomPort = is_float($portBottom) ? $this->getFloat($portBottom) : $portBottom;
+
+        $multiplyFloats = $this->createMultiplyFloats();
+        $multiplyFloats->connectInputA($portTopPort);
+        $multiplyFloats->connectInputB($portBottomPort);
+        return $multiplyFloats->getOutput();
+    }
+
+    public function getDivideValue(float|Port $portTop, float|Port $portBottom): Port
+    {
+        $portTopPort = is_float($portTop) ? $this->getFloat($portTop) : $portTop;
+        $portBottomPort = is_float($portBottom) ? $this->getFloat($portBottom) : $portBottom;
+
+        $divideFloats = $this->createDivideFloats();
+        $divideFloats->connectInputA($portTopPort);
+        $divideFloats->connectInputB($portBottomPort);
+        return $divideFloats->getOutput();
+    }
+
+    public function getFloat(float $float)
+    {
+        return $this->createFloat($float)->getOutput();
+    }
+
+    public function getInverseBool(Port $boolOutput): Port
+    {
+        $inverse = $this->createNot();
+        $inverse->connectInput($boolOutput);
+        return $inverse->getOutput();
+    }
+
+    public function getAbsValue(float|Port $value): Port
+    {
+        $valuePort = is_float($value) ? $this->getFloat($value) : $value;
+
+        $abs = $this->createAbsFloat();
+        $abs->connectInput($valuePort);
+        return $abs->getOutput();
+    }
+
+    public function getInverseValue(float|Port $valueOutput): Port
+    {
+        return $this->getMultiplyValue($valueOutput, -1);
+    }
+
+    public function getConditionalFloat(Port $condition, float|Port $ifTrue, float|Port $ifFalse): Port
+    {
+        $truePortion = $this->setCondFloat(true, $condition, $ifTrue);
+        $falsePortion = $this->setCondFloat(false, $condition, $ifFalse);
+        return $this->getAddValue($truePortion, $falsePortion);
+    }
+
+    public function getMinValue(float|Port $floatA, float|Port $floatB): Port
+    {
+        $isALess = $this->compareFloats(FloatOperator::LESS_THAN, $floatA, $floatB);
+        return $this->getConditionalFloat($isALess, $floatA, $floatB);
+    }
+
+    public function getMaxValue(float|Port $floatA, float|Port $floatB): Port
+    {
+        $isAGreater = $this->compareFloats(FloatOperator::GREATER_THAN, $floatA, $floatB);
+        return $this->getConditionalFloat($isAGreater, $floatA, $floatB);
+    }
+
+    public function getClampedValue(float|Port $min, float|Port $max, float|Port $value): Port
+    {
+        $minPort = is_float($min) ? $this->getFloat($min) : $min;
+        $maxPort = is_float($max) ? $this->getFloat($max) : $max;
+        $valuePort = is_float($value) ? $this->getFloat($value) : $value;
+
+        $clamp = $this->createClampFloat();
+        $clamp->connectMin($minPort);
+        $clamp->connectMax($maxPort);
+        $clamp->connectValue($valuePort);
+        return $clamp->getOutput();
+    }
+
+    public function compareBool(BooleanOperator $op, Port $boolA, ?Port $boolB = null)
+    {
+        if ($boolB === null && $op !== BooleanOperator::NOT) {
+            throw new \InvalidArgumentException("Boolean comparison requires two inputs unless using NOT operator.");
+        }
+        if (BooleanOperator::NOT === $op && $boolB !== null) {
+            throw new \InvalidArgumentException("NOT operator requires only one input.");
+        }
+        if (BooleanOperator::NOT) {
+            return $this->getInverseBool($boolA);
+        }
+        return $this->createCompareBool($op)
+            ->connectInputA($boolA)
+            ->connectInputB($boolB)
+            ->getOutput();
+    }
+
+    public function compareFloats(FloatOperator $op, float|Port $floatA, float|Port $floatB)
+    {
+        $floatAPort = is_float($floatA) ? $this->getFloat($floatA) : $floatA;
+        $floatBPort = is_float($floatB) ? $this->getFloat($floatB) : $floatB;
+
+        return $this->createCompareFloats($op)
+            ->connectInputA($floatAPort)
+            ->connectInputB($floatBPort)
+            ->getOutput();
+    }
+
+    public function setCondFloat(bool $cond, Port $condition, float|Port $float)
+    {
+        $floatPort = is_float($float) ? $this->getFloat($float) : $float;
+
+        $condBranch = $cond ? ConditionalBranch::TRUE : ConditionalBranch::FALSE;
+        return $this->createConditionalSetFloat($condBranch)
+            ->connectCondition($condition)
+            ->connectFloat($floatPort)
+            ->getOutput();
     }
 }
