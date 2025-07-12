@@ -104,39 +104,39 @@ class ComputerHelper
         return $latch;
     }
 
-    /**
-     * Creates a multi-bit register to store a binary number (e.g., an AI state).
-     * This version is built directly from SR Latches.
-     *
-     * @param int $bitCount The number of bits the register can hold.
-     * @param Port $writeEnable A single boolean port that enables writing to ALL bits.
-     * @return RegisterComponent An object containing arrays of data inputs and outputs.
-     */
     public function createRegister(int $bitCount, Port $writeEnable): RegisterComponent
     {
         $register = new RegisterComponent();
 
         for ($i = 0; $i < $bitCount; $i++) {
-            // Create the core 1-bit memory cell.
             $latch = $this->createSRLatch();
 
-            // Create a dedicated data input port for this bit.
-            $data_input_port = $this->createBool(false)->getOutput();
+            $setLogicGate = $this->createCompareBool(BooleanOperator::AND);
+            $writeEnable->connectTo($setLogicGate->inputB);
+            $setLogicGate->getOutput()->connectTo($latch->set);
 
-            // Create the logic to write to the latch.
-            // SET the latch if (Data is TRUE) AND (Write is ENABLED).
-            $set_signal = $this->getAndGate($data_input_port, $writeEnable);
+            $notGate = $this->createNot();
+            $resetLogicGate = $this->createCompareBool(BooleanOperator::AND);
+            $notGate->getOutput()->connectTo($resetLogicGate->inputA);
+            $writeEnable->connectTo($resetLogicGate->inputB);
+            $resetLogicGate->getOutput()->connectTo($latch->reset);
 
-            // RESET the latch if (Data is FALSE) AND (Write is ENABLED).
-            $not_data = $this->getNotGate($data_input_port);
-            $reset_signal = $this->getAndGate($not_data, $writeEnable);
+            // CORRECTED BUFFER: Use an AND gate with a TRUE input to create a buffer.
+            // This allows for a clean, single-input port that can be forked internally.
+            $bufferGate = $this->createCompareBool(BooleanOperator::AND);
+            $trueNode = $this->createBool(true)->getOutput();
+            $trueNode->connectTo($bufferGate->inputB);
 
-            // Connect the logic to the latch.
-            $set_signal->connectTo($latch->set);
-            $reset_signal->connectTo($latch->reset);
+            // This is the clean, public-facing input port for this bit of the register.
+            $dataInputPort = $bufferGate->inputA;
+            $bufferedOutput = $bufferGate->getOutput();
 
-            // Add this bit's input and output to our component's arrays.
-            $register->dataInputs[] = $data_input_port;
+            // Now, safely fork the buffered output to both the SET and RESET logic paths.
+            $bufferedOutput->connectTo($setLogicGate->inputA);
+            $bufferedOutput->connectTo($notGate->input);
+
+            // Add the now-functional ports to the component.
+            $register->dataInputs[] = $dataInputPort;
             $register->dataOutputs[] = $latch->q;
         }
 
@@ -178,5 +178,76 @@ class ComputerHelper
 
         // Create the component to return.
         return $muxOutput;
+    }
+
+    /**
+     * Creates a XOR (Exclusive OR) gate.
+     */
+    public function getXorGate(Port $inputA, Port $inputB): Port
+    {
+        return $this->compareBool(BooleanOperator::XOR, $inputA, $inputB);
+    }
+
+    /**
+     * Creates a Half Adder circuit. Adds two bits, returning a Sum and a Carry output.
+     * @return array An associative array with 'sum' and 'carry' ports.
+     */
+    public function createHalfAdder(Port $a, Port $b): array
+    {
+        return [
+            'sum'   => $this->getXorGate($a, $b),
+            'carry' => $this->getAndGate($a, $b)
+        ];
+    }
+
+    /**
+     * Creates a binary incrementer circuit. Takes an array of bits and returns an array
+     * of bits representing the input number + 1.
+     * @param Port[] $inputBits An array of ports representing the binary number.
+     * @return Port[] An array of ports representing the incremented number.
+     */
+    public function createIncrementer(array $inputBits): array
+    {
+        $resultBits = [];
+        $bitCount = count($inputBits);
+        // The first carry-in is 'true' because we are adding 1.
+        $carryIn = $this->createBool(true)->getOutput();
+
+        for ($i = 0; $i < $bitCount; $i++) {
+            // A half-adder is all that's needed for an incrementer.
+            // It adds the current bit to the carry from the previous bit.
+            $ha = $this->createHalfAdder($inputBits[$i], $carryIn);
+            $resultBits[] = $ha['sum'];
+            $carryIn = $ha['carry']; // The carry ripples to the next bit.
+        }
+
+        return $resultBits;
+    }
+
+    /**
+     * Creates a synchronous, resettable counter.
+     * @param int $bitCount The number of bits for the counter.
+     * @param Port $incrementSignal A boolean pulse that increments the counter by 1.
+     * @param Port $resetSignal A boolean signal that resets the counter to 0.
+     * @return RegisterComponent The register that holds the counter's value.
+     */
+    public function createCounter(int $bitCount, Port $incrementSignal, Port $resetSignal): RegisterComponent
+    {
+        // The register updates its value on an increment or reset trigger.
+        $writeEnable = $this->getOrGate($incrementSignal, $resetSignal);
+        // Note: The createRegister function now works correctly.
+        $register = $this->createRegister($bitCount, $writeEnable);
+
+        $currentValue = $register->dataOutputs;
+        $incrementedValue = $this->createIncrementer($currentValue);
+
+        // If reset is active, the next value is 0. Otherwise, it's the incremented value.
+        $zero = $this->createBool(false)->getOutput();
+        for ($i = 0; $i < $bitCount; $i++) {
+            $nextValue = $this->getConditionalBool($resetSignal, $zero, $incrementedValue[$i]);
+            $nextValue->connectTo($register->dataInputs[$i]);
+        }
+
+        return $register;
     }
 }
