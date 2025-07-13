@@ -5,6 +5,7 @@ namespace GraphLib\Traits;
 // New Node Uses
 
 use GraphLib\Enums\ConditionalBranch;
+use GraphLib\Enums\FloatOperator;
 use GraphLib\Nodes\ConstructSlimeProperties;
 use GraphLib\Nodes\VolleyballGetBool;
 use GraphLib\Nodes\VolleyballGetTransform;
@@ -28,6 +29,7 @@ use GraphLib\Enums\VolleyballGetBoolModifier;
 use GraphLib\Enums\VolleyballGetFloatModifier;
 use GraphLib\Enums\VolleyballGetTransformModifier;
 use GraphLib\Graph\Port;
+use GraphLib\Helper\ComputerHelper;
 
 trait SlimeFactory
 {
@@ -113,6 +115,17 @@ trait SlimeFactory
     public function createDebugDrawDisc(): DebugDrawDisc
     {
         return new DebugDrawDisc($this->graph);
+    }
+
+    public function getRandomFloat(Port|float $min, Port|float $max): Port
+    {
+        $min = is_float($min) ? $this->getFloat($min) : $min;
+        $max = is_float($max) ? $this->getFloat($max) : $max;
+
+        $random = $this->createRandomFloat();
+        $random->connectMin($min);
+        $random->connectMax($max);
+        return $random->getOutput();
     }
 
     public function debugDrawLine(Port $start, Port $end, float $thickness, string $color)

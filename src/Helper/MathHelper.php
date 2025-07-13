@@ -742,4 +742,67 @@ class MathHelper
         $division = $this->getDivideValue($numerator, $rangeFrom);
         return $this->getAddValue($division, $toMin);
     }
+
+    /**
+     * Creates a node graph to modify the X component of a Vector3.
+     *
+     * @param Port $vector The original Vector3 port.
+     * @param Port|float $x The new float value for the X component.
+     * @return Port The port for the resulting modified Vector3.
+     */
+    public function modifyVector3X(Port $vector, Port|float $x): Port
+    {
+        // Ensure the new X value is a port
+        $newX = is_float($x) ? $this->getFloat($x) : $x;
+
+        // Get the original Y and Z components from the input vector
+        $vectorSplit = $this->splitVector3($vector);
+        $originalY = $vectorSplit->getOutputY();
+        $originalZ = $vectorSplit->getOutputZ();
+
+        // Construct the new vector using the new X and original Y/Z
+        return $this->constructVector3($newX, $originalY, $originalZ);
+    }
+
+    /**
+     * Creates a node graph to modify the Y component of a Vector3.
+     *
+     * @param Port $vector The original Vector3 port.
+     * @param Port|float $y The new float value for the Y component.
+     * @return Port The port for the resulting modified Vector3.
+     */
+    public function modifyVector3Y(Port $vector, Port|float $y): Port
+    {
+        // Ensure the new Y value is a port
+        $newY = is_float($y) ? $this->getFloat($y) : $y;
+
+        // Get the original X and Z components from the input vector
+        $vectorSplit = $this->splitVector3($vector);
+        $originalX = $vectorSplit->getOutputX();
+        $originalZ = $vectorSplit->getOutputZ();
+
+        // Construct the new vector using the new Y and original X/Z
+        return $this->constructVector3($originalX, $newY, $originalZ);
+    }
+
+    /**
+     * Creates a node graph to modify the Z component of a Vector3.
+     *
+     * @param Port $vector The original Vector3 port.
+     * @param Port|float $z The new float value for the Z component.
+     * @return Port The port for the resulting modified Vector3.
+     */
+    public function modifyVector3Z(Port $vector, Port|float $z): Port
+    {
+        // Ensure the new Z value is a port
+        $newZ = is_float($z) ? $this->getFloat($z) : $z;
+
+        // Get the original X and Y components from the input vector
+        $vectorSplit = $this->splitVector3($vector);
+        $originalX = $vectorSplit->getOutputX();
+        $originalY = $vectorSplit->getOutputY();
+
+        // Construct the new vector using the new Z and original X/Y
+        return $this->constructVector3($originalX, $originalY, $newZ);
+    }
 }
