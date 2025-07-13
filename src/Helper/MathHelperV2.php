@@ -30,6 +30,15 @@ class MathHelperV2 extends MathHelper
         return $operationNode->getOutput();
     }
 
+    public function getModuloValue(float|Port $a, float|Port $b)
+    {
+        $a = is_float($a) ? $this->getFloat($a) : $a;
+        $b = is_float($b) ? $this->getFloat($b) : $b;
+
+        $modulo = $this->createModulo();
+        return $modulo->connectInputA($a)->connectInputB($b)->getOutput();
+    }
+
     /**
      * Calculates the absolute value of a float using the Operation node.
      * Overrides the base implementation to use the more generic Operation node.
