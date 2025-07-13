@@ -65,7 +65,7 @@ class SlimeHelper
     public const BALL_RADIUS = 0.3;
     public const BALL_MASS = 0.25;
     public const BALL_DRAG = 0.0;
-    public const BALL_RESTITUTION = 0.6;
+    public const BALL_RESTITUTION = 0.57;
     public const BALL_FRICTION = 0.0;
 
     public function __construct(Graph $graph)
