@@ -3,11 +3,15 @@
 use GraphLib\Enums\BooleanOperator;
 use GraphLib\Enums\FloatOperator;
 use GraphLib\Enums\GetSlimeVector3Modifier;
+use GraphLib\Enums\RelativePositionModifier;
 use GraphLib\Enums\VolleyballGetBoolModifier;
 use GraphLib\Enums\VolleyballGetFloatModifier;
+use GraphLib\Enums\VolleyballGetTransformModifier;
 use GraphLib\Graph\Graph;
 use GraphLib\Graph\Port;
+use GraphLib\Graph\Vector3;
 use GraphLib\Helper\SlimeHelper;
+use GraphLib\Nodes\Vector3Split;
 
 require_once "../vendor/autoload.php";
 
@@ -17,225 +21,142 @@ const STAT_JUMP = 5;
 
 class ShiniDev extends SlimeHelper
 {
-    private Port $stabilize;
+    private ?Port $shouldSpike = null;
+    private ?Port $isLandingOnMySide = null;
+
+    private float $jumpHeight;
+    private float $jumpHeightFromGround;
 
     public function __construct(Graph $graph)
     {
         parent::__construct($graph);
-        // States
-        $ballTouches = $this->createVolleyballGetFloat(VolleyballGetFloatModifier::BALL_TOUCHES_REMAINING)->getOutput();
-        $selfSide = $this->createVolleyballGetBool(VolleyballGetBoolModifier::BALL_IS_SELF_SIDE)->getOutput();
-        $stabilizeCheck = $this->compareFloats(FloatOperator::GREATER_THAN_OR_EQUAL, $ballTouches, 2);
-        $this->stabilize = $this->compareBool(BooleanOperator::AND, $selfSide, $stabilizeCheck);
+        $this->jumpHeight = self::JUMP_HEIGHTS[STAT_JUMP] - self::BALL_RADIUS;
+        $this->jumpHeight *= .95;
+        $this->jumpHeightFromGround = $this->jumpHeight - self::SLIME_RADIUS;
+        $this->isLandingOnMySide = $this->isLandingOnMySide();
+        // $this->idealSpike = $this->trackBounce($this->jumpHeight);
     }
 
-    public function timeToWall(Port $posX, Port $velX, Port $xMin, Port $xMax)
+    public function isLandingOnMySide()
     {
-        $posBound = $this->compareFloats(FloatOperator::GREATER_THAN, $velX, 0);
-        $negBound = $this->compareFloats(FloatOperator::LESS_THAN, $velX, 0);
-        $zeroBound = $this->compareFloats(FloatOperator::EQUAL_TO, $velX, 0);
-
-        $posCalc = $this->getSubtractValue($xMax, $posX);
-        $posCalc = $this->getDivideValue($posCalc, $velX);
-        $posBound = $this->setCondFloat(true, $posBound, $posCalc);
-
-        $negCalc = $this->getSubtractValue($xMin, $posX);
-        $negCalc = $this->getDivideValue($negCalc, $velX);
-        $negBound = $this->setCondFloat(true, $negBound, $negCalc);
-
-        $time = $this->getAddValue($posBound, $negBound);
-        return $this->getConditionalFloat($zeroBound, 999, $time);
-    }
-
-    public function simulateBounce(Port $timeRemaining, Port $posX, Port $posZ, Port $velX, Port $velZ, int $iterationN)
-    {
-        $ballRadius = $this->getFloat(self::BALL_RADIUS);
-        $stageHalfWidth = $this->getFloat(self::STAGE_HALF_WIDTH);
-        $stageHalfDepth = $this->getFloat(self::STAGE_HALF_DEPTH);
-        $effectivePositiveX = $this->math->getSubtractValue($stageHalfWidth, $ballRadius);
-        $effectiveNegativeX = $this->math->getInverseValue($effectivePositiveX);
-        $effectivePositiveZ = $this->math->getSubtractValue($stageHalfDepth, $ballRadius);
-        $effectiveNegativeZ = $this->math->getInverseValue($effectivePositiveZ);
-        $lostForce = SlimeHelper::BALL_RESTITUTION;
-
-        for ($i = 0; $i < $iterationN; $i++) {
-            $timeX = $this->timeToWall($posX, $velX, $effectiveNegativeX, $effectivePositiveX);
-            $timeZ = $this->timeToWall($posZ, $velZ, $effectiveNegativeZ, $effectivePositiveZ);
-
-            $timeNext = $this->getMinValue($timeX, $timeZ);
-            $timeNext = $this->getMinValue($timeNext, $timeRemaining);
-
-            $posX = $this->getAddValue($posX, $this->getMultiplyValue($velX, $timeNext));
-            $posZ = $this->getAddValue($posZ, $this->getMultiplyValue($velZ, $timeNext));
-            $timeRemaining = $this->getSubtractValue($timeRemaining, $timeNext);
-
-            $velX = $this->getConditionalFloat(
-                $this->compareFloats(FloatOperator::EQUAL_TO, $timeX, $timeNext),
-                $this->getMultiplyValue($velX, -$lostForce),
-                $velX
-            );
-
-            $velZ = $this->getConditionalFloat(
-                $this->compareFloats(FloatOperator::EQUAL_TO, $timeZ, $timeNext),
-                $this->getMultiplyValue($velZ, -$lostForce),
-                $velZ
-            );
+        if ($this->isLandingOnMySide !== null) {
+            return;
         }
-
-        return ['x' => $posX, 'z' => $posZ];
+        $amIOnPositiveSide = $this->math->compareFloats(FloatOperator::GREATER_THAN_OR_EQUAL, $this->selfPositionSplit->x, 0.01);
+        $isLandingOnPositiveSide = $this->math->compareFloats(FloatOperator::GREATER_THAN_OR_EQUAL, $this->ballLandingSplit->x, 0.01);
+        return $this->math->compareBool(BooleanOperator::EQUAL_TO, $amIOnPositiveSide, $isLandingOnPositiveSide);
     }
 
-    public function trackBounce(Port|float $targetY)
+    /**
+     * Calculates the ideal ground target to achieve a 60-degree angled spike.
+     *
+     * @param Port $predictedInterceptPoint The 3D point in the air where the ball will be for the spike.
+     * @return Port The final 2D ground position vector for the slime to move to.
+     */
+    public function getAngledSpikeTarget(Port $predictedInterceptPoint): Port
     {
-        $targetY = is_float($targetY) ? $this->getFloat($targetY) : $targetY;
-        $gravity = $this->getFloat(self::GRAVITY);
+        // --- 1. Define Constants & Shot Angle (using native PHP) ---
+        $collisionDistance = self::SLIME_RADIUS - self::BALL_RADIUS - .1;
+        $angleRad = deg2rad(52);
+        $cosAngle = cos($angleRad); // Pre-calculated in PHP
+        $sinAngle = sin($angleRad); // Pre-calculated in PHP
 
-        $ballPosition = $this->createSlimeGetVector3(GetSlimeVector3Modifier::BALL_POSITION)->getOutput();
-        $ballVelocity = $this->createSlimeGetVector3(GetSlimeVector3Modifier::BALL_VELOCITY)->getOutput();
-        $pos = $this->math->splitVector3($ballPosition);
-        $vel = $this->math->splitVector3($ballVelocity);
-
-        $a = $this->math->getMultiplyValue(0.5, $gravity);
-        $b = $vel->getOutputY();
-        $c = $this->math->getSubtractValue($pos->getOutputY(), $targetY);
-        $roots = $this->math->getQuadraticFormula($a, $b, $c);
-        $t = $roots['root_neg'];
-
-        $timeRemaining = $t;
-        $posX = $pos->getOutputX();
-        $posZ = $pos->getOutputZ();
-        $velX = $vel->getOutputX();
-        $velZ = $vel->getOutputZ();
-        $bounce = $this->simulateBounce($timeRemaining, $posX, $posZ, $velX, $velZ, 2);
-
-        $land = $this->math->constructVector3($bounce['x'], $targetY, $bounce['z']);
-        $this->debugDrawDisc($land, .3, .3, "Yellow");
-        return $land;
-    }
-
-    public function predictBallLandingSpotv2(Port|float $targetY)
-    {
-        // --- 1. Get Initial State and Parameters from Constants ---
-        $targetY_port = is_float($targetY) ? $this->getFloat($targetY) : $targetY;
-
-        $ballRadius = $this->getFloat(self::BALL_RADIUS);
-        $gravity = $this->getFloat(self::GRAVITY);
-        $stageHalfWidth = $this->getFloat(self::STAGE_HALF_WIDTH);
-        $stageHalfDepth = $this->getFloat(self::STAGE_HALF_DEPTH);
-
-        // --- NEW: Calculate Effective Boundaries for the Ball's Center ---
-        $effectivePositiveX = $this->math->getSubtractValue($stageHalfWidth, $ballRadius);
-        $effectiveNegativeX = $this->math->getInverseValue($effectivePositiveX);
-
-        $effectivePositiveZ = $this->math->getSubtractValue($stageHalfDepth, $ballRadius);
-        $effectiveNegativeZ = $this->math->getInverseValue($effectivePositiveZ);
-
-        // --- Get live data from the game ---
-        $ballPosition = $this->createSlimeGetVector3(GetSlimeVector3Modifier::BALL_POSITION)->getOutput();
-        $ballVelocity = $this->createSlimeGetVector3(GetSlimeVector3Modifier::BALL_VELOCITY)->getOutput();
-
-        $pos = $this->math->splitVector3($ballPosition);
-        $vel = $this->math->splitVector3($ballVelocity);
-
-        // --- 2. Calculate Time to Reach Target Height (t) ---
-        $a = $this->math->getMultiplyValue(0.5, $gravity);
-        $b = $vel->getOutputY();
-        $c = $this->math->getSubtractValue($pos->getOutputY(), $targetY_port);
-        $roots = $this->math->getQuadraticFormula($a, $b, $c);
-        $t = $roots['root_neg'];
-
-        // --- 3. Unfold and Map X-Coordinate using Effective Boundaries ---
-        $roomWidthX = $this->math->getMultiplyValue(2.0, $effectivePositiveX);
-        $periodX = $this->math->getMultiplyValue(2.0, $roomWidthX);
-
-        $x_shifted = $this->math->getSubtractValue($pos->getOutputX(), $effectiveNegativeX);
-        $x_unfolded = $this->math->getAddValue($x_shifted, $this->math->getMultiplyValue($vel->getOutputX(), $t));
-
-        $mod1_x = $this->createModulo()->connectInputA($x_unfolded)->connectInputB($periodX)->getOutput();
-        $added_x = $this->math->getAddValue($mod1_x, $periodX);
-        $x_mapped_intermediate = $this->createModulo()->connectInputA($added_x)->connectInputB($periodX)->getOutput();
-
-        $is_x_reflected = $this->math->compareFloats(FloatOperator::GREATER_THAN, $x_mapped_intermediate, $roomWidthX);
-        $x_mapped_final = $this->math->getConditionalFloat($is_x_reflected, $this->math->getSubtractValue($periodX, $x_mapped_intermediate), $x_mapped_intermediate);
-        $final_x = $this->math->getAddValue($x_mapped_final, $effectiveNegativeX);
-
-        // --- 4. Unfold and Map Z-Coordinate using Effective Boundaries ---
-        $roomDepthZ = $this->math->getMultiplyValue(2.0, $effectivePositiveZ);
-        $periodZ = $this->math->getMultiplyValue(2.0, $roomDepthZ);
-
-        $z_shifted = $this->math->getSubtractValue($pos->getOutputZ(), $effectiveNegativeZ);
-        $z_unfolded = $this->math->getAddValue($z_shifted, $this->math->getMultiplyValue($vel->getOutputZ(), $t));
-
-        $mod1_z = $this->createModulo()->connectInputA($z_unfolded)->connectInputB($periodZ)->getOutput();
-        $added_z = $this->math->getAddValue($mod1_z, $periodZ);
-        $z_mapped_intermediate = $this->createModulo()->connectInputA($added_z)->connectInputB($periodZ)->getOutput();
-
-        $is_z_reflected = $this->math->compareFloats(FloatOperator::GREATER_THAN, $z_mapped_intermediate, $roomDepthZ);
-        $z_mapped_final = $this->math->getConditionalFloat($is_z_reflected, $this->math->getSubtractValue($periodZ, $z_mapped_intermediate), $z_mapped_intermediate);
-        $final_z = $this->math->getAddValue($z_mapped_final, $effectiveNegativeZ);
-
-        // --- 5. Construct Final Vector ---
-        $land = $this->math->constructVector3($final_x, $targetY_port, $final_z);
-        $this->debugDrawDisc($land, .2, .2, "Red");
-        return $land;
-    }
-
-    public function moveState(Port $predictedBallLanding)
-    {
-        $selfPos = $this->createSlimeGetVector3(GetSlimeVector3Modifier::SELF_POSITION)->getOutput();
-        $selfPosSplit = $this->math->splitVector3($selfPos);
-        $selfPosX = $selfPosSplit->getOutputX();
-        $landingSplit = $this->math->splitVector3($predictedBallLanding);
+        // --- 2. Calculate Shot Direction ---
+        $landingSplit = $this->math->splitVector3($predictedInterceptPoint);
         $landingX = $landingSplit->getOutputX();
         $landingZ = $landingSplit->getOutputZ();
 
-        $amIOnPositiveSide = $this->math->compareFloats(FloatOperator::GREATER_THAN_OR_EQUAL, $selfPosX, 0.01);
-        $isLandingOnPositiveSide = $this->math->compareFloats(FloatOperator::GREATER_THAN_OR_EQUAL, $landingX, 0.01);
-        $isLandingOnMySide = $this->math->compareBool(BooleanOperator::EQUAL_TO, $amIOnPositiveSide, $isLandingOnPositiveSide);
+        // --- CORRECTED LOGIC: Define "straight" as perpendicular to the net ---
+        // First, determine which side the ball is on.
+        $isBallOnPositiveSide = $this->math->compareFloats(FloatOperator::GREATER_THAN, $landingX, 0.0);
+        // The "straight" X direction is -1 if we're on the positive side, and +1 if on the negative side.
+        $normalizedX = $this->math->getConditionalFloat($isBallOnPositiveSide, -1.0, 1.0);
+        // The "straight" Z direction is always 0.
+        $normalizedZ = $this->getFloat(0.0);
+        // Rotate the direction vector using the pre-calculated values
+        $term1X = $this->math->getMultiplyValue($normalizedX, $cosAngle);
+        $term2X = $this->math->getMultiplyValue($normalizedZ, $sinAngle);
+        $rotatedX = $this->math->getSubtractValue($term1X, $term2X);
 
-        $safetyPushX = $this->compareFloats(FloatOperator::GREATER_THAN, $this->getAbsValue($landingX), SlimeHelper::STAGE_HALF_WIDTH / 2);
-        $safetyPushX = $this->getConditionalFloat($safetyPushX, 1.03, 1.15);
+        $term1Z = $this->math->getMultiplyValue($normalizedX, $sinAngle);
+        $term2Z = $this->math->getMultiplyValue($normalizedZ, $cosAngle);
+        $rotatedZ = $this->math->getAddValue($term1Z, $term2Z);
 
-        $powerZoneX = $this->compareFloats(FloatOperator::LESS_THAN, $this->getAbsValue($landingX), 1.7);
-        $powerZoneX = $this->getConditionalFloat($powerZoneX, 1.3, $safetyPushX);
+        // The AI needs to be positioned on the opposite side of the ball
+        $slimePositionDirectionX = $this->math->getInverseValue($rotatedX);
+        $slimePositionDirectionZ = $this->math->getInverseValue($rotatedZ);
 
-        $offSetX =  $this->getMultiplyValue($landingSplit->getOutputX(), $powerZoneX);
-        $offSetY = $landingSplit->getOutputY();
+        // --- 3. Calculate the Ideal 3D Intercept Point for the AI ---
+        $offsetX = $this->math->getMultiplyValue($slimePositionDirectionX, $collisionDistance);
+        $offsetZ = $this->math->getMultiplyValue($slimePositionDirectionZ, $collisionDistance);
 
-        $safetyPushZ = $this->compareFloats(FloatOperator::GREATER_THAN, $this->getAbsValue($landingZ), SlimeHelper::STAGE_HALF_DEPTH / 2);
-        $safetyPushZ = $this->getConditionalFloat($safetyPushZ, 1.1, 1.6);
+        $idealInterceptPointX = $this->math->getAddValue($landingX, $offsetX);
+        $idealInterceptPointZ = $this->math->getAddValue($landingZ, $offsetZ);
 
-        $powerZoneZ = $this->compareFloats(FloatOperator::LESS_THAN, $this->getAbsValue($landingZ), .8);
-        $powerZoneZ = $this->getConditionalFloat($powerZoneZ, 2.4, $safetyPushZ);
+        // --- 4. Project the Target to the Ground ---
+        return $this->math->constructVector3(
+            $idealInterceptPointX,
+            $this->getFloat(0.0), // The final target is on the ground
+            $idealInterceptPointZ
+        );
+    }
+    public function moveStateV2()
+    {
+        $aggressiveTarget = $this->getAngledSpikeTarget($this->ballLanding);
 
-        $offSetZ = $this->getMultiplyValue($landingSplit->getOutputZ(), 1.075);
-        $offSetBallLanding = $this->math->constructVector3($offSetX, $offSetY, $offSetZ);
-        $ballLanding = $this->math->getConditionalVector3($this->stabilize, $predictedBallLanding, $offSetBallLanding);
+        // --- 2. Calculate the Defensive/Observing Position (Fallback) ---
+        $selfPosX = $this->selfPositionSplit->x;
+        $amIOnPositiveSide = $this->math->compareFloats(FloatOperator::GREATER_THAN, $selfPosX, 0.0);
 
-        $defaultPosValue = $this->getConditionalFloat($amIOnPositiveSide, 3.4, -3.4);
+        $opponentPosition = $this->createSlimeGetVector3(GetSlimeVector3Modifier::OPPONENT_POSITION)->getOutput();
+        $opponentSplit = $this->math->splitVector3($opponentPosition);
+
+        // Create a "shadow" position that mirrors the opponent
+        $shadowPosition = $this->math->constructVector3(
+            $this->getMultiplyValue($this->math->getInverseValue($opponentSplit->getOutputX()), .9),
+            $this->getFloat(0.0),
+            $opponentSplit->getOutputZ()
+        );
+
+        // Create a safe default position
+        $defaultPosValue = $this->math->getConditionalFloat($amIOnPositiveSide, 3.4, -3.4);
         $defaultPos = $this->math->constructVector3($defaultPosValue, 0, 0);
 
-        $moveToTarget = $this->math->getConditionalVector3($isLandingOnMySide, $ballLanding, $defaultPos);
-        // $this->debugDrawDisc($moveToTarget, .4, .4, "Green");
+        // Decide whether to shadow the opponent or go to the default safe spot
+        $isOpponentNearNet = $this->math->compareFloats(FloatOperator::LESS_THAN, $this->math->getAbsValue($opponentSplit->getOutputX()), 1.8);
+        $defensiveTarget = $this->math->getConditionalVector3($isOpponentNearNet, $shadowPosition, $defaultPos);
+
+        $handleBall = $this->math->getConditionalVector3($this->isLandingOnMySide, $this->ballLanding, $defensiveTarget);
+
+        // --- 3. Final Decision ---
+        // Use the pre-calculated check from the constructor to see if the ball is landing on our side.
+        $moveToTarget = $this->math->getConditionalVector3($this->shouldSpike, $aggressiveTarget, $handleBall);
+
         return $moveToTarget;
     }
 
     public function ai()
     {
-        $ballLanding = $this->trackBounce(self::SLIME_RADIUS);
-        $ballPosition = $this->createSlimeGetVector3(GetSlimeVector3Modifier::BALL_POSITION)->getOutput();
-        $moveToTarget = $this->moveState($ballLanding);
+        $ballTouches = $this->createVolleyballGetFloat(VolleyballGetFloatModifier::BALL_TOUCHES_REMAINING)->getOutput();
+        $ballIsSelfSide = $this->createVolleyballGetBool(VolleyballGetBoolModifier::BALL_IS_SELF_SIDE)->getOutput();
+        $stabilizeCheck = $this->compareFloats(FloatOperator::LESS_THAN_OR_EQUAL, $ballTouches, 1);
+        $this->shouldSpike = $this->compareBool(BooleanOperator::AND, $this->isLandingOnMySide, $stabilizeCheck);
+        $this->shouldSpike = $this->compareBool(BooleanOperator::AND, $ballIsSelfSide, $this->shouldSpike);
+
+        $this->debugDrawDisc($this->ballLanding, .3, .3, "Hot Pink");
+        $moveToTarget = $this->moveStateV2();
+        $this->debugDrawDisc($moveToTarget, .3, .3, "Green");
 
         // Jumping logic
-        $selfPosition = $this->createSlimeGetVector3(GetSlimeVector3Modifier::SELF_POSITION)->getOutput();
-        $distanceToMoveTarget = $this->math->getDistance($moveToTarget, $selfPosition);
-        $distanceToBall = $this->math->getDistance($ballPosition, $selfPosition);
+        $distanceToMoveTarget = $this->math->getDistance($moveToTarget, $this->selfPosition);
+        $distanceToBall = $this->math->getDistance($this->ballPosition, $this->selfPosition);
 
-        $jumpThreshold = $this->getConditionalFloat($this->stabilize, .8, 1.05);
+        $jumpThreshold = $this->getConditionalFloat($this->shouldSpike, $this->jumpHeightFromGround, self::SLIME_RADIUS + .2);
         $shouldJumpOnBallLanding = $this->compareFloats(FloatOperator::LESS_THAN, $distanceToMoveTarget, $jumpThreshold);
-        $shouldJumpOnCloseBall = $this->compareFloats(FloatOperator::LESS_THAN, $distanceToBall, 2);
+        $shouldJumpOnCloseBall = $this->compareFloats(FloatOperator::LESS_THAN, $distanceToBall, $this->jumpHeight);
 
         $shouldJump = $this->compareBool(BooleanOperator::AND, $shouldJumpOnBallLanding, $shouldJumpOnCloseBall);
+        $this->debug($this->selfPositionSplit->y);
         $this->debug($shouldJump);
 
         $this->controller($moveToTarget, $shouldJump);
@@ -244,7 +165,7 @@ class ShiniDev extends SlimeHelper
 
 $graph = new Graph();
 $slimeHelper = new ShiniDev($graph);
-$slimeHelper->initializeSlime("ShiniDev", "Philippines", "Green", STAT_SPEED, STAT_ACCELERATION, STAT_JUMP);
+$slimeHelper->initializeSlime("ShiniDev V2", "Philippines", "Green", STAT_SPEED, STAT_ACCELERATION, STAT_JUMP);
 $slimeHelper->ai();
 
-$graph->toTxt("C:\Users\Haba\Downloads\SlimeVolleyball_v0_6\AIComp_Data\Saves\shinidev.txt");
+$graph->toTxt("C:\Users\Haba\Downloads\SlimeVolleyball_v0_6\AIComp_Data\Saves\shinidev-v2.txt");
