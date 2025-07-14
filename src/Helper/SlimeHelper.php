@@ -69,12 +69,11 @@ class SlimeHelper
     public const BALL_RESTITUTION = 0.57;
     public const BALL_FRICTION = 0.0;
 
-    protected ?Port $ballLanding = null;
-    protected ?Vector3Split $ballLandingSplit = null;
     protected ?Port $selfPosition = null;
     protected ?Vector3Split $selfPositionSplit = null;
     protected ?Port $ballPosition = null;
     protected ?Vector3Split $ballPositionSplit = null;
+    protected ?Port $distanceToBall = null;
 
     public function __construct(Graph $graph)
     {
@@ -85,8 +84,7 @@ class SlimeHelper
         $this->selfPositionSplit = $this->math->splitVector3($this->selfPosition);
         $this->ballPosition = $this->createSlimeGetVector3(GetSlimeVector3Modifier::BALL_POSITION)->getOutput();
         $this->ballPositionSplit = $this->math->splitVector3($this->ballPosition);
-        $this->ballLanding = $this->trackBounce(self::SLIME_RADIUS);
-        $this->ballLandingSplit = $this->math->splitVector3($this->ballLanding);
+        $this->distanceToBall = $this->math->getDistance($this->ballPosition, $this->selfPosition);
     }
 
     public function initializeSlime(string $name, string $country, string $color, float $speed, float $acceleration, float $jumping)
@@ -171,7 +169,7 @@ class SlimeHelper
         return ['x' => $posX, 'z' => $posZ];
     }
 
-    public function trackBounce(Port|float $targetY)
+    public function trackBounce(Port|float $targetY, int $n = 2)
     {
         $targetY = is_float($targetY) ? $this->getFloat($targetY) : $targetY;
         $gravity = $this->getFloat(self::GRAVITY);
@@ -197,7 +195,7 @@ class SlimeHelper
 
         // Call the updated simulation with the full 3D state
         // $bounce = $this->simulateBounceV3($t, $posX, $posY, $posZ, $velX, $velY, $velZ, 2);
-        $bounce = $this->simulateBounce($t, $posX, $posZ, $velX, $velZ, 2);
+        $bounce = $this->simulateBounce($t, $posX, $posZ, $velX, $velZ, $n);
 
         $land = $this->math->constructVector3($bounce['x'], $targetY, $bounce['z']);
         return $land;

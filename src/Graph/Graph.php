@@ -238,6 +238,9 @@ class Graph implements \JsonSerializable
             $currentY = -$totalHeight / 2.0;
             foreach ($nodesInColumn as $node) {
                 $size = $this->calculateNodeSize($node);
+                if ($node->id == "Debug") {
+                    continue;
+                }
                 $node->setPosition(new Vector3($currentX, $currentY, 0.0), $size);
                 $currentY += $offsetY;
             }
@@ -259,6 +262,9 @@ class Graph implements \JsonSerializable
         $i = 0;
         foreach ($this->serializableNodes as $node) {
             $size = $this->calculateNodeSize($node);
+            if ($node->id == "Debug") {
+                continue;
+            }
             $node->setPosition(new Vector3($x, $y, 0.0), $size);
             $x += $offsetX;
             $i++;
@@ -334,5 +340,23 @@ class Graph implements \JsonSerializable
             $filename .= '.txt';
         }
         file_put_contents($filename, $this->toJson());
+    }
+
+    public function version($baseName, $savePath, $update = true)
+    {
+        $extension = ".txt";
+        $version = 1;
+        while (file_exists($savePath . $baseName . $version . $extension)) {
+            $version++;
+        }
+        if (!$update) {
+            $version--;
+        }
+        $versionedName = $baseName . "_V" . $version;
+        $versionedFile = $savePath . $baseName . $version . $extension;
+        return [
+            'name' => $versionedName,
+            'file' => $versionedFile
+        ];
     }
 }

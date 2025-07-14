@@ -12,6 +12,7 @@ use GraphLib\Graph\Port;
 use GraphLib\Graph\Vector3;
 use GraphLib\Helper\SlimeHelper;
 use GraphLib\Nodes\Vector3Split;
+use GraphLib\Nodes\VolleyballGetBool;
 
 require_once "../vendor/autoload.php";
 
@@ -23,6 +24,12 @@ class ShiniDev extends SlimeHelper
 {
     private ?Port $shouldSpike = null;
     private ?Port $isLandingOnMySide = null;
+    private ?Port $isGoingToMySide = null;
+    private ?Port $randSign = null;
+    private ?Port $randSign2 = null;
+
+    protected ?Port $ballLanding = null;
+    protected ?Vector3Split $ballLandingSplit = null;
 
     private float $jumpHeight;
     private float $jumpHeightFromGround;
@@ -30,11 +37,31 @@ class ShiniDev extends SlimeHelper
     public function __construct(Graph $graph)
     {
         parent::__construct($graph);
-        $this->jumpHeight = self::JUMP_HEIGHTS[STAT_JUMP] - self::BALL_RADIUS;
-        $this->jumpHeight *= .95;
+        $this->ballLanding = $this->trackBounce(self::SLIME_RADIUS, 3);
+        $this->ballLandingSplit = $this->math->splitVector3($this->ballLanding);
+        $this->jumpHeight = self::JUMP_HEIGHTS[STAT_JUMP];
         $this->jumpHeightFromGround = $this->jumpHeight - self::SLIME_RADIUS;
         $this->isLandingOnMySide = $this->isLandingOnMySide();
+        $randCond = $this->compareBool(BooleanOperator::NOT, $this->isLandingOnMySide);
+        $this->randSign = $this->getConditionalRandomSign($randCond);
         // $this->idealSpike = $this->trackBounce($this->jumpHeight);
+    }
+
+    public function isGoingToMySide()
+    {
+        if ($this->isGoingToMySide !== null) {
+            return;
+        }
+        $ballVelocity = $this->createSlimeGetVector3(GetSlimeVector3Modifier::BALL_VELOCITY)->getOutput();
+        $ballVelocitySplit = $this->math->splitVector3($ballVelocity);
+        $ballVelocitySplitX = $this->math->getSignValue($ballVelocitySplit->x);
+        $selfSpawn = $this->createRelativePosition(RelativePositionModifier::SELF)->connectInput(
+            $this->createVolleyballGetTransform(VolleyballGetTransformModifier::SELF_TEAM_SPAWN)->getOutput()
+        )->getOutput();
+        $selfSpawnsplit = $this->math->splitVector3($selfSpawn);
+        $selfSpawnSplitX = $this->math->getSignValue($selfSpawnsplit->x);
+
+        return $this->compareFloats(FloatOperator::EQUAL_TO, $ballVelocitySplitX, $selfSpawnSplitX);
     }
 
     public function isLandingOnMySide()
@@ -44,7 +71,8 @@ class ShiniDev extends SlimeHelper
         }
         $amIOnPositiveSide = $this->math->compareFloats(FloatOperator::GREATER_THAN_OR_EQUAL, $this->selfPositionSplit->x, 0.01);
         $isLandingOnPositiveSide = $this->math->compareFloats(FloatOperator::GREATER_THAN_OR_EQUAL, $this->ballLandingSplit->x, 0.01);
-        return $this->math->compareBool(BooleanOperator::EQUAL_TO, $amIOnPositiveSide, $isLandingOnPositiveSide);
+
+        return  $this->math->compareBool(BooleanOperator::EQUAL_TO, $amIOnPositiveSide, $isLandingOnPositiveSide);
     }
 
     /**
@@ -56,8 +84,12 @@ class ShiniDev extends SlimeHelper
     public function getAngledSpikeTarget(Port $predictedInterceptPoint): Port
     {
         // --- 1. Define Constants & Shot Angle (using native PHP) ---
-        $collisionDistance = self::SLIME_RADIUS - self::BALL_RADIUS - .1;
-        $angleRad = deg2rad(52);
+        $collisionDistance = self::SLIME_RADIUS - self::BALL_RADIUS;
+        $xMaxDistance = .28;
+        $zMaxDistance = .20;
+        $xMaxDistanceClose = .46;
+        $zMaxDistanceClose = .33;
+        $angleRad = deg2rad(60);
         $cosAngle = cos($angleRad); // Pre-calculated in PHP
         $sinAngle = sin($angleRad); // Pre-calculated in PHP
 
@@ -85,13 +117,28 @@ class ShiniDev extends SlimeHelper
         // The AI needs to be positioned on the opposite side of the ball
         $slimePositionDirectionX = $this->math->getInverseValue($rotatedX);
         $slimePositionDirectionZ = $this->math->getInverseValue($rotatedZ);
-
         // --- 3. Calculate the Ideal 3D Intercept Point for the AI ---
         $offsetX = $this->math->getMultiplyValue($slimePositionDirectionX, $collisionDistance);
         $offsetZ = $this->math->getMultiplyValue($slimePositionDirectionZ, $collisionDistance);
+        $offsetX = $this->getConditionalFloat(
+            $this->compareFloats(FloatOperator::GREATER_THAN_OR_EQUAL, 3.4, $this->getAbsValue($this->selfPositionSplit->x)),
+            $this->math->getClampedValue(-$xMaxDistance, $xMaxDistance, $offsetX),
+            $this->math->getClampedValue(-$xMaxDistanceClose, $xMaxDistanceClose, $offsetX)
+        );
+        $offsetZ = $this->getConditionalFloat(
+            $this->compareFloats(FloatOperator::GREATER_THAN_OR_EQUAL, 1.7, $this->getAbsValue($this->selfPositionSplit->z)),
+            $this->math->getClampedValue(-$zMaxDistance, $zMaxDistance, $offsetZ),
+            $this->math->getClampedValue(-$zMaxDistanceClose, $zMaxDistanceClose, $offsetZ)
+        );
+
+        $fakeWhenHigh = $this->compareFloats(FloatOperator::GREATER_THAN, $this->distanceToBall, $this->jumpHeight * 3);
 
         $idealInterceptPointX = $this->math->getAddValue($landingX, $offsetX);
-        $idealInterceptPointZ = $this->math->getAddValue($landingZ, $offsetZ);
+        $idealInterceptPointZ = $this->getConditionalFloat(
+            $fakeWhenHigh,
+            $this->math->getAddValue($landingZ, $this->getMultiplyValue($offsetZ, $this->randSign)),
+            $this->math->getAddValue($landingZ, $this->getInverseValue($offsetZ))
+        );
 
         // --- 4. Project the Target to the Ground ---
         return $this->math->constructVector3(
@@ -124,7 +171,22 @@ class ShiniDev extends SlimeHelper
 
         // Decide whether to shadow the opponent or go to the default safe spot
         $isOpponentNearNet = $this->math->compareFloats(FloatOperator::LESS_THAN, $this->math->getAbsValue($opponentSplit->getOutputX()), 1.8);
-        $defensiveTarget = $this->math->getConditionalVector3($isOpponentNearNet, $shadowPosition, $defaultPos);
+        $isOpponentNearCorner = $this->math->compareFloats(FloatOperator::LESS_THAN, $this->math->getAbsValue($opponentSplit->getOutputZ()), 2.8);
+        $isOpponentNearCornerAndNet = $this->compareBool(BooleanOperator::AND, $isOpponentNearNet, $isOpponentNearCorner);
+        $isOpponentAttacking = $this->compareBool(BooleanOperator::OR, $isOpponentNearCornerAndNet, $isOpponentNearNet);
+        $defensiveTarget = $this->math->getConditionalVector3($isOpponentAttacking, $shadowPosition, $defaultPos);
+        $ballIsSelfSide = $this->createVolleyballGetBool(VolleyballGetBoolModifier::BALL_IS_SELF_SIDE)->getOutput();
+        $shouldNotDefense =  $this->compareBool(BooleanOperator::AND, $isOpponentAttacking, $this->compareBool(BooleanOperator::NOT, $ballIsSelfSide));
+        $shouldNotDefense = $this->compareBool(
+            BooleanOperator::AND,
+            $shouldNotDefense,
+            $this->createVolleyballGetBool(VolleyballGetBoolModifier::OPPONENT_CAN_JUMP)->getOutput()
+        );
+        $this->shouldSpike = $this->getConditionalBool(
+            $shouldNotDefense,
+            $this->createBool(false)->getOutput(),
+            $this->shouldSpike
+        );
 
         $handleBall = $this->math->getConditionalVector3($this->isLandingOnMySide, $this->ballLanding, $defensiveTarget);
 
@@ -148,24 +210,24 @@ class ShiniDev extends SlimeHelper
         $this->debugDrawDisc($moveToTarget, .3, .3, "Green");
 
         // Jumping logic
+        // $distanceToMoveTarget = $this->getSubtractValue($this->ballLandingSplit->x, $this->selfPositionSplit->x);
         $distanceToMoveTarget = $this->math->getDistance($moveToTarget, $this->selfPosition);
+        $this->debug($distanceToMoveTarget);
+        // $distanceToBall = $this->getSubtractValue($this->ballPositionSplit->y, $this->selfPositionSplit->y);
         $distanceToBall = $this->math->getDistance($this->ballPosition, $this->selfPosition);
 
-        $jumpThreshold = $this->getConditionalFloat($this->shouldSpike, $this->jumpHeightFromGround, self::SLIME_RADIUS + .2);
-        $shouldJumpOnBallLanding = $this->compareFloats(FloatOperator::LESS_THAN, $distanceToMoveTarget, $jumpThreshold);
-        $shouldJumpOnCloseBall = $this->compareFloats(FloatOperator::LESS_THAN, $distanceToBall, $this->jumpHeight);
+        $shouldJumpOnBallLanding = $this->compareFloats(FloatOperator::LESS_THAN, $distanceToMoveTarget, self::SLIME_RADIUS + .2);
+        $shouldJumpOnCloseBall = $this->compareFloats(FloatOperator::LESS_THAN, $distanceToBall, $this->jumpHeight * .9);
 
         $shouldJump = $this->compareBool(BooleanOperator::AND, $shouldJumpOnBallLanding, $shouldJumpOnCloseBall);
-        $this->debug($this->selfPositionSplit->y);
-        $this->debug($shouldJump);
-
         $this->controller($moveToTarget, $shouldJump);
     }
 }
 
 $graph = new Graph();
+$name = $graph->version("ShiniDev", "C:\Users\Haba\Downloads\SlimeVolleyball_v0_6\AIComp_Data\Saves\/", true);
 $slimeHelper = new ShiniDev($graph);
-$slimeHelper->initializeSlime("ShiniDev V2", "Philippines", "Green", STAT_SPEED, STAT_ACCELERATION, STAT_JUMP);
+$slimeHelper->initializeSlime($name['name'], "Philippines", "Green", STAT_SPEED, STAT_ACCELERATION, STAT_JUMP);
 $slimeHelper->ai();
 
-$graph->toTxt("C:\Users\Haba\Downloads\SlimeVolleyball_v0_6\AIComp_Data\Saves\shinidev-v2.txt");
+$graph->toTxt($name['file']);

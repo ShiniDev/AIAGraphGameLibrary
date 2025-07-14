@@ -8,6 +8,8 @@ use GraphLib\Enums\FloatOperator;
 use GraphLib\Enums\GetKartVector3Modifier;
 use GraphLib\Graph\Graph;
 use GraphLib\Graph\Port;
+use GraphLib\Graph\Vector2;
+use GraphLib\Graph\Vector3;
 use GraphLib\Nodes\AbsFloat;
 use GraphLib\Nodes\AddFloats;
 use GraphLib\Nodes\AddVector3;
@@ -350,7 +352,7 @@ trait NodeFactory
     public function debug(Port ...$ports)
     {
         foreach ($ports as $port) {
-            $this->createDebug()->connectInput($port);
+            $this->createDebug()->connectInput($port)->setPosition(new Vector3(0, 0, 0), new Vector2(3000, 300));
         }
     }
 

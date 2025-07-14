@@ -128,21 +128,60 @@ trait SlimeFactory
         return $random->getOutput();
     }
 
-    public function debugDrawLine(Port $start, Port $end, float $thickness, string $color)
+    /**
+     * Creates a "sample and hold" circuit for a random sign.
+     *
+     * It generates a new random sign (1.0 or -1.0) only when the condition is true,
+     * and holds that value until the condition becomes true again.
+     *
+     * @param Port $condition A boolean port. When true, a new sign is generated and stored.
+     * @return Port The port for the stable random sign.
+     */
+    public function getConditionalRandomSign(Port $condition): Port
     {
+        // 1. Generate a New Random Sign
+        // This part continuously creates a potential new sign (as a boolean).
+        $randomFloat = $this->getRandomFloat(0.0, 1.0);
+        $isNewSignPositive = $this->math->compareFloats(FloatOperator::GREATER_THAN_OR_EQUAL, $randomFloat, 0.5);
+
+        // 2. Create Memory
+        // A 1-bit memory register will store the sign. Your condition is the trigger.
+        $memoryRegister = $this->computer->createRegister(1, $condition);
+
+        // 3. Connect the new random sign to the memory's input.
+        // The memory will only "accept" this new value when the condition is true.
+        $isNewSignPositive->connectTo($memoryRegister->dataInputs[0]);
+
+        // 4. Output the Stored Value
+        // The output of the memory is the stable boolean value that we want.
+        $stableBoolSign = $memoryRegister->dataOutputs[0];
+
+        // Convert the stable boolean back to a float (1.0 or -1.0) for use in calculations.
+        return $this->math->getConditionalFloat(
+            $stableBoolSign,
+            1.0,
+            -1.0
+        );
+    }
+
+    public function debugDrawLine(Port $start, Port $end, Port|float $thickness, string $color)
+    {
+        $thickness = is_float($thickness) ? $this->getFloat($thickness) : $thickness;
         $line = $this->createDebugDrawLine();
         $line->connectStart($start);
         $line->connectEnd($end);
-        $line->connectThickness($this->getFloat($thickness));
+        $line->connectThickness($thickness);
         $line->connectColor($this->createColor($color)->getOutput());
     }
 
-    public function debugDrawDisc(Port $center, float $radius, float $thickness, string $color)
+    public function debugDrawDisc(Port $center, Port|float $radius, Port|float $thickness, string $color)
     {
+        $radius = is_float($radius) ? $this->getFloat($radius) : $radius;
+        $thickness = is_float($thickness) ? $this->getFloat($thickness) : $thickness;
         $disc = $this->createDebugDrawDisc();
         $disc->connectCenter($center);
-        $disc->connectRadius($this->getFloat($radius));
-        $disc->connectThickness($this->getFloat($thickness));
+        $disc->connectRadius($radius);
+        $disc->connectThickness($thickness);
         $disc->connectColor($this->createColor($color)->getOutput());
     }
 }
