@@ -16,7 +16,7 @@ class NodeBool extends Node
     public function __construct(Graph $graph, bool $value = false)
     {
         // Use the bool value to set the modifier internally
-        parent::__construct('Bool', $value ? '1' : '0');
+        parent::__construct('Bool', $value ? '0' : '1');
 
         $this->output = new Port($graph, 'Bool1', 'bool', 1, 0, new Color(0.591, 0.0, 0.867));
 
