@@ -352,7 +352,7 @@ trait NodeFactory
     public function debug(Port ...$ports)
     {
         foreach ($ports as $port) {
-            $this->createDebug()->connectInput($port)->setPosition(new Vector3(0, 0, 0), new Vector2(3000, 300));
+            $this->createDebug()->connectInput($port)->setPosition(new Vector3(0, 0, 0), new Vector2(130, 130));
         }
     }
 
