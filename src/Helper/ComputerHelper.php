@@ -6,13 +6,16 @@ use GraphLib\Components\LatchComponent;
 use GraphLib\Components\RegisterComponent;
 use GraphLib\Enums\BooleanOperator;
 use GraphLib\Enums\ConditionalBranch;
+use GraphLib\Enums\FloatOperator;
+use GraphLib\Enums\VolleyballGetFloatModifier;
 use GraphLib\Graph\Graph;
 use GraphLib\Graph\Port;
 use GraphLib\Traits\NodeFactory;
+use GraphLib\Traits\SlimeFactory;
 
 class ComputerHelper
 {
-    use NodeFactory;
+    use SlimeFactory;
 
     public function __construct(Graph $graph)
     {
@@ -231,7 +234,7 @@ class ComputerHelper
      * @param Port $resetSignal A boolean signal that resets the counter to 0.
      * @return RegisterComponent The register that holds the counter's value.
      */
-    public function createCounter(int $bitCount, Port $incrementSignal, Port $resetSignal): RegisterComponent
+    public function oldCreateCounter(int $bitCount, Port $incrementSignal, Port $resetSignal): RegisterComponent
     {
         // The register updates its value on an increment or reset trigger.
         $writeEnable = $this->getOrGate($incrementSignal, $resetSignal);
@@ -249,5 +252,134 @@ class ComputerHelper
         }
 
         return $register;
+    }
+
+    /**
+     * Creates a synchronous, resettable counter that initializes to zero.
+     * @param int $bitCount The number of bits for the counter.
+     * @param Port $incrementSignal A boolean pulse that increments the counter by 1.
+     * @param Port $resetSignal A boolean signal that resets the counter to 0.
+     * @return RegisterComponent The register that holds the counter's value.
+     */
+    public function createCounter(int $bitCount, Port $incrementSignal, Port $resetSignal): RegisterComponent
+    {
+        // --- Initialization Logic ---
+        // Create a signal that is TRUE only on the first few frames to ensure the counter resets to 0.
+        $simTime = $this->getVolleyballFloat(VolleyballGetFloatModifier::SIMULATION_DURATION);
+        $isFirstFrame = $this->compareFloats(FloatOperator::LESS_THAN, $simTime, 0.05);
+
+        // The final reset signal is TRUE if the user wants to reset OR if it's the first frame.
+        $finalResetSignal = $this->getOrGate($resetSignal, $isFirstFrame);
+
+        // --- Original Counter Logic (with new reset signal) ---
+        // The register updates its value on an increment or reset trigger.
+        $writeEnable = $this->getOrGate($incrementSignal, $finalResetSignal);
+        $register = $this->createRegister($bitCount, $writeEnable);
+
+        $currentValue = $register->dataOutputs;
+        $incrementedValue = $this->createIncrementer($currentValue);
+
+        // If reset is active, the next value is 0. Otherwise, it's the incremented value.
+        $zero = $this->createBool(false)->getOutput();
+        for ($i = 0; $i < $bitCount; $i++) {
+            $nextValue = $this->getConditionalBool($finalResetSignal, $zero, $incrementedValue[$i]);
+            $nextValue->connectTo($register->dataInputs[$i]);
+        }
+
+        return $register;
+    }
+
+    /**
+     * Creates a rising-edge detector. Outputs true for a single frame when the input
+     * signal transitions from false to true.
+     * @param Port $signal The boolean signal to monitor.
+     * @return Port A boolean port that pulses true on a rising edge.
+     */
+    public function oldCreateEdgeDetector(Port $signal): Port
+    {
+        // 1. Create a latch to store the signal's state from the previous frame.
+        $memory = $this->createSRLatch();
+        $previousState = $memory->q;
+
+        // 2. Continuously update the memory to match the current signal.
+        $signal->connectTo($memory->set);
+        $this->getInverseBool($signal)->connectTo($memory->reset);
+
+        // 3. An edge is detected if the current signal is TRUE and the previous state was FALSE.
+        return $this->getAndGate($signal, $this->getInverseBool($previousState));
+    }
+
+    /**
+     * Creates a robust, rising-edge detector using a feedback loop for a true 1-frame delay.
+     * Outputs true for a single frame when the input signal transitions from false to true.
+     * @param Port $signal The boolean signal to monitor.
+     * @return Port A boolean port that pulses true on a rising edge.
+     */
+    public function createEdgeDetector(Port $signal): Port
+    {
+        // We will build our own 1-bit memory cell using a MUX with a feedback loop.
+        // The logic is: next_state = current_signal. The feedback provides the delay.
+        // We use a float conditional node as our primitive MUX.
+        $memoryMux = $this->createConditionalSetFloatV2();
+
+        // The condition is always true, so the MUX always loads the new value.
+        $memoryMux->connectCondition($this->createBool(true)->getOutput());
+
+        // The "ifTrue" input is the current signal's value (as a float 1.0 or 0.0).
+        $signalAsFloat = $this->getConditionalFloat($signal, 1.0, 0.0);
+        $memoryMux->connectInputFloat1($signalAsFloat);
+
+        // The output of the MUX holds the value from the previous frame.
+        $delayedSignalFloat = $memoryMux->getOutput();
+
+        // *** THE FEEDBACK LOOP ***
+        // We connect the output back to the "ifFalse" input. The engine uses last frame's
+        // value here, creating the 1-frame delay we need.
+        $memoryMux->connectInputFloat2($delayedSignalFloat);
+
+        // Convert the delayed float signal back into a boolean for our logic.
+        $previousState = $this->compareFloats(FloatOperator::EQUAL_TO, $delayedSignalFloat, 1.0);
+
+        // The final edge detection logic is now reliable.
+        return $this->getAndGate($signal, $this->getInverseBool($previousState));
+    }
+
+    /**
+     * Creates a float-based counter that increments only on a true pulse,
+     * using a reliable feedback loop.
+     *
+     * @param Port $incrementPulse A boolean port that should be true for only one frame.
+     * @param Port $resetPulse A boolean port that resets the counter to zero.
+     * @return Port A float port representing the current count.
+     */
+    public function createPulseAccumulator(Port $incrementPulse, Port $resetPulse): Port
+    {
+        // 1. Create two conditional gates. Their combined output will be our final result.
+        // This gate handles the 'Reset' case.
+        $ifResetGate = $this->createConditionalSetFloat(ConditionalBranch::TRUE);
+        // This gate handles the 'Hold' or 'Increment' case.
+        $ifNotResetGate = $this->createConditionalSetFloat(ConditionalBranch::FALSE);
+
+        // 2. The final output port is the sum of the two conditional paths.
+        // This is also the port we will use for our feedback loop.
+        $currentCount = $this->getAddValue($ifResetGate->getOutput(), $ifNotResetGate->getOutput());
+
+        // 3. Define the logic for the "Not Reset" path.
+        // If we are not resetting, we then check if we should increment.
+        $incrementedValue = $this->getAddValue($currentCount, 1.0);
+        // If increment is true, use the new value, otherwise use the existing value (hold).
+        $valueAfterIncrement = $this->getConditionalFloat($incrementPulse, $incrementedValue, $currentCount);
+        $ifNotResetGate->connectFloat($valueAfterIncrement);
+
+        // 4. Define the logic for the "Reset" path.
+        // If we are resetting, the value is always 0.
+        $ifResetGate->connectFloat($this->getFloat(0.0));
+
+        // 5. Connect the main reset condition to both gates to control which path is active.
+        $ifResetGate->connectCondition($resetPulse);
+        $ifNotResetGate->connectCondition($resetPulse);
+
+        // 6. Return the main output port, which is also used for the feedback.
+        return $currentCount;
     }
 }

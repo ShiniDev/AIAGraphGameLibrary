@@ -239,9 +239,13 @@ trait NodeFactory
         return $divideFloats->getOutput();
     }
 
-    public function getFloat(float $float)
+    public function getFloat(float|Port $float)
     {
-        return $this->createFloat($float)->getOutput();
+        if (is_float($float)) {
+            return $this->createFloat($float)->getOutput();
+        } else {
+            return $float;
+        }
     }
 
     public function getInverseBool(Port $boolOutput): Port

@@ -38,6 +38,10 @@ class Graph implements \JsonSerializable
      */
     private array $nodeRegistry = [];
     /**
+     * @var array Internal cache for faster node lookups by sID.
+     */
+    private array $nodeIdRegistry = [];
+    /**
      * @var array Internal cache for faster port lookups by sID.
      */
     private array $portRegistry = [];
@@ -66,21 +70,44 @@ class Graph implements \JsonSerializable
      */
     public function addNode(Node $node): Node
     {
-        $this->serializableNodes[] = $node;
-        $this->nodeRegistry[$node->sID] = $node; // Register node
-        foreach ($node->serializablePorts as $port) {
-            $this->portRegistry[$port->sID] = $port; // Register ports
+        if (isset($this->nodeIdRegistry[$node->id])) {
+            $existingNode = $this->nodeIdRegistry[$node->id];
+
+            if (count($existingNode->serializablePorts) === 1 && $existingNode->serializablePorts[0]->polarity === 1) {
+                // // Merge ports from the new node into the existing one
+                // foreach ($node->serializablePorts as $portToMerge) {
+                //     // 1. Update the port's internal reference to its new parent node
+                //     $portToMerge->setNodeInfo($existingNode->sID, $existingNode->instanceID);
+
+                //     // 2. Add the port to the existing node's own list
+                //     $existingNode->addPort($portToMerge, $portToMerge->localPosition); // Assuming an addPort method
+
+                //     // 3. Register the port with the graph
+                //     $this->portRegistry[$portToMerge->sID] = $portToMerge;
+                // }
+                $node = $existingNode;
+            }
         }
+
+        // If no duplicate is found, add the new node and update ALL registries.
+        $this->serializableNodes[] = $node;
+        $this->nodeRegistry[$node->sID] = $node;      // Register by unique sID
+        $this->nodeIdRegistry[$node->id] = $node;       // Register by logical id
+
+        // Register the new node's ports.
+        foreach ($node->serializablePorts as $port) {
+            $this->portRegistry[$port->sID] = $port;
+        }
+
         return $node;
     }
-
     /**
      * Establishes a connection between two ports, performing validation checks.
      *
      * @param Port $portOut The output port initiating the connection.
      * @param Port $portIn The input port receiving the connection.
      * @return self Returns the Graph instance for method chaining.
-     * @throws IncompatiblePolarityException If the ports have incompatible polarities (e.g., output to output).
+     * @throws IncompatiblePolarityException If the ports have incompatible polarities ().
      * @throws IncompatiblePortTypeException If the ports have incompatible data types.
      * @throws MaxConnectionsExceededException If the input port has reached its maximum allowed connections.
      */

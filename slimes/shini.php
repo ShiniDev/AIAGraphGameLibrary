@@ -25,7 +25,7 @@ class Shini extends SlimeHelper
     public function __construct(Graph $graph)
     {
         parent::__construct($graph);
-        $this->ballLanding = $this->trackBounce(self::SLIME_RADIUS);
+        $this->ballLanding = $this->getLandingPosition(self::SLIME_RADIUS);
         $this->ballLandingSplit = $this->math->splitVector3($this->ballLanding);
         $randCond = $this->compareBool(BooleanOperator::NOT, $this->createVolleyballGetBool(VolleyballGetBoolModifier::BALL_IS_SELF_SIDE)->getOutput());
         $this->randSign = $this->getConditionalRandomSign($randCond);

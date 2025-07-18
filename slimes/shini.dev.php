@@ -37,14 +37,14 @@ class ShiniDev extends SlimeHelper
     public function __construct(Graph $graph)
     {
         parent::__construct($graph);
-        $this->ballLanding = $this->trackBounce(self::SLIME_RADIUS, 3);
+        $this->ballLanding = $this->getLandingPosition(self::SLIME_RADIUS, 3);
         $this->ballLandingSplit = $this->math->splitVector3($this->ballLanding);
         $this->jumpHeight = self::JUMP_HEIGHTS[STAT_JUMP];
         $this->jumpHeightFromGround = $this->jumpHeight - self::SLIME_RADIUS;
         $this->isLandingOnMySide = $this->isLandingOnMySide();
         $randCond = $this->compareBool(BooleanOperator::NOT, $this->isLandingOnMySide);
         $this->randSign = $this->getConditionalRandomSign($randCond);
-        // $this->idealSpike = $this->trackBounce($this->jumpHeight);
+        // $this->idealSpike = $this->getLandingPosition($this->jumpHeight);
     }
 
     public function isGoingToMySide()

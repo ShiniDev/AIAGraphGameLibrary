@@ -100,18 +100,56 @@ class VolleyBot extends SlimeHelper
     private function findGuaranteedShot(Port $selfPosition, Port $interceptTime, Port $interceptPoint): array
     {
         $selfPosSplit = $this->math->splitVector3($selfPosition);
-        $opponentSideX = $this->math->getConditionalFloat($this->math->compareFloats(FloatOperator::GREATER_THAN, $selfPosSplit->getOutputX(), 0.0), -1.0, 1.0);
+        $amIOnPositiveSide = $this->math->compareFloats(FloatOperator::GREATER_THAN, $selfPosSplit->getOutputX(), 0.0);
+        $opponentSideX = $this->math->getConditionalFloat($amIOnPositiveSide, $this->getFloat(-1.0), $this->getFloat(1.0));
+
+        // --- 1. Define all 4 corner targets ---
         $target1 = $this->math->constructVector3($this->math->getMultiplyValue($opponentSideX, self::STAGE_HALF_WIDTH - 0.5), self::BALL_RADIUS, self::STAGE_HALF_DEPTH - 0.5);
-        $t_opp1 = $this->calculateOpponentTravelTime($target1);
-        $t_score1 = $this->calculateTotalTimeToScore($target1, $interceptTime, $interceptPoint);
-        $isCheckmate1 = $this->math->compareFloats(FloatOperator::LESS_THAN, $t_score1, $t_opp1);
         $target2 = $this->math->constructVector3($this->math->getMultiplyValue($opponentSideX, self::STAGE_HALF_WIDTH - 0.5), self::BALL_RADIUS, -self::STAGE_HALF_DEPTH + 0.5);
-        $t_opp2 = $this->calculateOpponentTravelTime($target2);
-        $t_score2 = $this->calculateTotalTimeToScore($target2, $interceptTime, $interceptPoint);
-        $isCheckmate2 = $this->math->compareFloats(FloatOperator::LESS_THAN, $t_score2, $t_opp2);
-        $bestTarget = $this->math->getConditionalVector3($isCheckmate1, $target1, $target2);
-        $foundCheckmate = $this->compareBool(BooleanOperator::OR, $isCheckmate1, $isCheckmate2);
-        return ['target' => $bestTarget, 'found' => $foundCheckmate];
+        $target3 = $this->math->constructVector3($this->math->getMultiplyValue($opponentSideX, 1.5), self::BALL_RADIUS, self::STAGE_HALF_DEPTH - 0.5);
+        $target4 = $this->math->constructVector3($this->math->getMultiplyValue($opponentSideX, 1.5), self::BALL_RADIUS, -self::STAGE_HALF_DEPTH + 0.5);
+
+        // --- 2. Calculate "Time Advantage" for each target ---
+        $adv1 = $this->calculateTimeAdvantage($target1, $interceptTime, $interceptPoint);
+        $adv2 = $this->calculateTimeAdvantage($target2, $interceptTime, $interceptPoint);
+        $adv3 = $this->calculateTimeAdvantage($target3, $interceptTime, $interceptPoint);
+        $adv4 = $this->calculateTimeAdvantage($target4, $interceptTime, $interceptPoint);
+
+        // --- 3. Iteratively Find the Best Target ---
+        // Start by assuming Target 1 is the best.
+        $bestTarget = $target1;
+        $bestAdvantage = $adv1;
+
+        // Compare with Target 2
+        $is2Better = $this->math->compareFloats(FloatOperator::GREATER_THAN, $adv2, $bestAdvantage);
+        $bestTarget = $this->math->getConditionalVector3($is2Better, $target2, $bestTarget);
+        $bestAdvantage = $this->math->getConditionalFloat($is2Better, $adv2, $bestAdvantage);
+
+        // Compare with Target 3
+        $is3Better = $this->math->compareFloats(FloatOperator::GREATER_THAN, $adv3, $bestAdvantage);
+        $bestTarget = $this->math->getConditionalVector3($is3Better, $target3, $bestTarget);
+        $bestAdvantage = $this->math->getConditionalFloat($is3Better, $adv3, $bestAdvantage);
+
+        // Compare with Target 4
+        $is4Better = $this->math->compareFloats(FloatOperator::GREATER_THAN, $adv4, $bestAdvantage);
+        $bestTarget = $this->math->getConditionalVector3($is4Better, $target4, $bestTarget);
+        $bestAdvantage = $this->math->getConditionalFloat($is4Better, $adv4, $bestAdvantage);
+
+        // --- 4. Final Decision ---
+        // A shot is "guaranteed" if the best advantage found is greater than zero.
+        $foundGuaranteedShot = $this->math->compareFloats(FloatOperator::GREATER_THAN, $bestAdvantage, 0.0);
+
+        return ['target' => $bestTarget, 'found' => $foundGuaranteedShot];
+    }
+
+    /**
+     * Helper to calculate Time Advantage = Opponent's Travel Time - Total Time to Score
+     */
+    private function calculateTimeAdvantage(Port $targetPoint, Port $interceptTime, Port $interceptPoint): Port
+    {
+        $t_opp = $this->calculateOpponentTravelTime($targetPoint);
+        $t_score = $this->calculateTotalTimeToScore($targetPoint, $interceptTime, $interceptPoint);
+        return $this->math->getSubtractValue($t_opp, $t_score);
     }
     private function calculateOpponentTravelTime(Port $targetPoint): Port
     {
