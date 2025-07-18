@@ -15,12 +15,12 @@ use GraphLib\Nodes\VolleyballGetFloat;
 
 require_once "../vendor/autoload.php";
 
-const NAME = "Shinigami";
+const NAME = "Guy";
 const COUNTRY = "Japan";
-const COLOR = "White";
-const STAT_SPEED = 6;
-const STAT_ACCELERATION = 0;
-const STAT_JUMP = 4;
+const COLOR = "Red";
+const STAT_SPEED = 5;
+const STAT_ACCELERATION = 2;
+const STAT_JUMP = 3;
 
 class Shinigami extends SlimeHelper
 {
@@ -43,13 +43,20 @@ class Shinigami extends SlimeHelper
     public ?Port $dotProductBallToBase = null;
 
     // Catch
-    public ?Port $catchLanding = null;
-    public ?Vector3Split $catchLandingSplit = null;
+    public ?Port $positionToCatchZone = null;
+    public ?Vector3Split $positionToCatchZoneSplit = null;
+    public ?Port $timeToCatchZone = null;
     public ?Port $returnBallPosition = null;
 
-    // Offense
-    public ?Port $offenseBallLanding = null;
-    public ?Vector3Split $offenseBallLandingSplit = null;
+    // Ball Apex
+    public ?Port $positionToBallApex = null;
+    public ?Port $timeToBallApex = null;
+    public ?Vector3Split $positionToBallApexSplit = null;
+
+    // Ground
+    public ?Port $positionToBallGround = null;
+    public ?Port $timeToBallGround = null;
+    public ?Port $positionToBallGroundSplit = null;
 
     // Bools
     public ?Port $isBallGoingTowardsMe = null;
@@ -60,8 +67,8 @@ class Shinigami extends SlimeHelper
     public ?Port $isBallOponnentSide = null;
     public ?Port $isBallLandingOnSelfSide = null;
     public ?Port $isOffenseBallLandingOnSelfSide = null;
-    public ?Port $isCatchLandingNearNet = null;
-    public ?Port $isCatchLandingNearSelfNet = null;
+    public ?Port $isCatchZoneNearNet = null;
+    public ?Port $isCatchZoneNearSelfNet = null;
     public ?Port $isBallPassCatchInterceptAir = null;
     public ?Port $isBallNearSpikeInterceptAir = null;
     public ?Port $isOpponentGonnaSpike = null;
@@ -76,7 +83,7 @@ class Shinigami extends SlimeHelper
     public ?Port $runTrigger = null;
     public ?Port $ballTouches = null;
 
-    public float $saveSpot = self::BALL_RADIUS + self::SLIME_RADIUS;
+    public float $catchZone = self::BALL_RADIUS + self::SLIME_RADIUS;
     public float $spikeSpot = self::JUMP_HEIGHTS[STAT_JUMP];
     public function __construct(Graph $graph)
     {
@@ -99,28 +106,48 @@ class Shinigami extends SlimeHelper
         $this->dotProductBallToBase = $this->getDotProduct($this->ballVelocity, $this->fromBaseToEnemy);
         $this->isBallGoingTowardsOpponent = $this->compareFloats(FloatOperator::GREATER_THAN, $this->dotProductBallToBase, 0);
         $this->isBallGoingTowardsMe = $this->compareFloats(FloatOperator::LESS_THAN, $this->dotProductBallToBase, 0);
-        $this->catchLanding = $this->getLandingPosition($this->saveSpot, 3)['position'];
-        $this->catchLandingSplit = $this->math->splitVector3($this->catchLanding);
+        $toGround = $this->getLandingPosition(0);
+        $timeToGround = $toGround['timeToY'];
+        $positionToGround = $toGround['position'];
+        $this->timeToBallGround = $timeToGround;
+        $this->positionToBallGround = $positionToGround;
+
+        $catchZone = self::BALL_RADIUS + self::SLIME_RADIUS;
+        $cZone = $this->getLandingPosition($catchZone, 3);
+        $timeToCatchZone = $cZone['timeToY'];
+        $positionToCatchZone = $cZone['position'];
+        $this->timeToCatchZone = $timeToCatchZone;
+
+        $timeToBallApex = $this->getTimeToBallApex($this->ballVelocitySplit->y);
+        $positionToBallApex = $this->getApexPosition(
+            $this->ballPosition,
+            $this->ballVelocity,
+            $timeToBallApex
+        );
+        $this->timeToBallApex = $timeToBallApex;
+
+        $this->positionToCatchZone = $positionToCatchZone;
+        $this->positionToCatchZoneSplit = $this->math->splitVector3($this->positionToCatchZone);
         $this->isBallNearNet = $this->compareFloats(
             FloatOperator::LESS_THAN,
             $this->getAbsValue($this->ballPositionSplit->x),
             1.5
         );
-        $this->isCatchLandingNearNet = $this->compareFloats(
+        $this->isCatchZoneNearNet = $this->compareFloats(
             FloatOperator::LESS_THAN,
-            $this->getAbsValue($this->catchLandingSplit->x),
+            $this->getAbsValue($this->positionToCatchZoneSplit->x),
             1.75
         );
-        $this->isCatchLandingNearSelfNet();
-        $this->offenseBallLanding = $this->getLandingPosition($this->spikeSpot)['position'];
-        $this->offenseBallLandingSplit = $this->math->splitVector3($this->offenseBallLanding);
+        $this->isCatchZoneNearSelfNet();
+        $this->positionToBallApex = $positionToBallApex;
+        $this->positionToBallApexSplit = $this->math->splitVector3($this->positionToBallApex);
         $this->isBallSelfSide = $this->getVolleyballBool(VolleyballGetBoolModifier::BALL_IS_SELF_SIDE);
         $this->isBallOponnentSide = $this->compareBool(BooleanOperator::NOT, $this->isBallSelfSide);
         $whichSideAmI = $this->math->compareFloats(FloatOperator::GREATER_THAN_OR_EQUAL, $this->selfPositionSplit->x, 0.01);
-        $isCatchSameSide = $this->math->compareFloats(FloatOperator::GREATER_THAN_OR_EQUAL, $this->catchLandingSplit->x, 0.01);
+        $isCatchSameSide = $this->math->compareFloats(FloatOperator::GREATER_THAN_OR_EQUAL, $this->positionToCatchZoneSplit->x, 0.01);
         $isOffenseSameSide = $this->math->compareFloats(
             FloatOperator::GREATER_THAN_OR_EQUAL,
-            $this->offenseBallLandingSplit->x,
+            $this->positionToBallApexSplit->x,
             .01
         );
         $this->isOffenseBallLandingOnSelfSide = $this->compareBool(
@@ -171,19 +198,19 @@ class Shinigami extends SlimeHelper
         );
         $this->isBallPassCatchInterceptAir = $this->compareFloats(
             FloatOperator::LESS_THAN,
-            $this->math->getDistance($this->ballPosition, $this->catchLanding),
-            $this->saveSpot + .2
+            $this->math->getDistance($this->ballPosition, $this->positionToCatchZone),
+            $this->catchZone + .2
         );
         $this->isBallNearSpikeInterceptAir = $this->compareFloats(
             FloatOperator::LESS_THAN,
-            $this->math->getDistance($this->ballPosition, $this->offenseBallLanding),
-            // $this->math->getDistance($this->selfPosition, $this->offenseBallLanding)
+            $this->math->getDistance($this->ballPosition, $this->positionToBallApex),
+            // $this->math->getDistance($this->selfPosition, $this->positionToBallApex)
             self::BALL_RADIUS * 2
         );
         $this->runTrigger = $this->compareFloats(
             FloatOperator::LESS_THAN,
-            $this->math->getDistance($this->ballPosition, $this->catchLanding),
-            $this->saveSpot + (self::JUMP_HEIGHTS[STAT_JUMP] / 2)
+            $this->math->getDistance($this->ballPosition, $this->positionToCatchZone),
+            $this->catchZone + (self::JUMP_HEIGHTS[STAT_JUMP] / 2)
         );
 
         $opponentCloseToNet = $this->getAbsValue($this->opponentPositionSplit->x);
@@ -214,7 +241,7 @@ class Shinigami extends SlimeHelper
         $this->isOpponentGonnaSpike = $this->compareBool(
             BooleanOperator::OR,
             $this->isOpponentGonnaSpike,
-            $this->isCatchLandingNearNet
+            $this->isCatchZoneNearNet
         );
 
         $this->isOpponentGonnaSpike = $this->compareBool(
@@ -233,13 +260,13 @@ class Shinigami extends SlimeHelper
             $this->getVolleyballFloat(VolleyballGetFloatModifier::BALL_TOUCHES_REMAINING),
             3
         );
-        $this->debug($this->isCatchLandingNearSelfNet);
+        $this->debug($this->isCatchZoneNearSelfNet);
     }
 
-    public function isCatchLandingNearSelfNet()
+    public function isCatchZoneNearSelfNet()
     {
         // Get the necessary X-coordinates
-        $landingX = $this->catchLandingSplit->getOutputX();
+        $landingX = $this->positionToCatchZoneSplit->getOutputX();
         $selfX = $this->selfPositionSplit->getOutputX();
 
         // --- Condition 1: Is the landing spot physically near the net? ---
@@ -261,7 +288,7 @@ class Shinigami extends SlimeHelper
         );
 
         // --- Final Result: Combine both conditions with an AND gate ---
-        $this->isCatchLandingNearSelfNet = $this->compareBool(
+        $this->isCatchZoneNearSelfNet = $this->compareBool(
             BooleanOperator::AND,
             $isNearNet,
             $isLandingOnMySide
@@ -270,15 +297,15 @@ class Shinigami extends SlimeHelper
 
     public function debugs()
     {
-        $this->debugDrawDisc($this->catchLanding, .0, .6, "Yellow");
-        $this->debugDrawDisc($this->offenseBallLanding, .0, .6, "Hot Pink");
+        $this->debugDrawDisc($this->positionToCatchZone, .0, .6, "Yellow");
+        $this->debugDrawDisc($this->positionToBallApex, .0, .6, "Hot Pink");
     }
 
     public function moveTo()
     {
         // How far to move back relative to ball downfall speed.
         $spikePosition = $this->math->movePointAlongVector(
-            $this->catchLanding,
+            $this->positionToCatchZone,
             // $this->fromBaseToEnemy,
             $this->getDirectionToFarthestSide($this->fromOpponentToBall),
             $this->math->remapValue(
@@ -290,7 +317,7 @@ class Shinigami extends SlimeHelper
             )
         );
         $setPosition = $this->math->movePointAlongVector(
-            $this->catchLanding,
+            $this->positionToCatchZone,
             // $this->fromBaseToEnemy,
             $this->getDirectionToFarthestSide($this->fromOpponentToBall),
             -.35
@@ -306,12 +333,12 @@ class Shinigami extends SlimeHelper
                 $this->ballTouches,
                 3
             ),
-            $this->catchLanding,
+            $this->positionToCatchZone,
             $this->returnBallPosition
         );
         $this->returnBallPosition = $this->getConditionalVector3(
-            $this->isCatchLandingNearNet,
-            $this->catchLanding,
+            $this->isCatchZoneNearNet,
+            $this->positionToCatchZone,
             $this->returnBallPosition
         );
 
@@ -321,7 +348,7 @@ class Shinigami extends SlimeHelper
         $defaultPosValue = $this->getSpinningTarget($defaultPosValue, self::SLIME_RADIUS * 2, 15);
 
         // $block = $this->math->movePointAlongVector(
-        //     $this->catchLanding,
+        //     $this->positionToCatchZone,
         //     $this->normalizedFromOpponentToBall,
         //     $this->math->getDistance($this->opponentPosition, $this->selfPosition)
         // );
@@ -329,7 +356,7 @@ class Shinigami extends SlimeHelper
         // 2. The ideal blocking position is slightly IN FRONT of the landing spot, along the attack line.
         // This allows the slime to use its body as a wall.
         $block = $this->math->movePointAlongVector(
-            $this->catchLanding,
+            $this->positionToCatchZone,
             // $this->math->getNormalizedVector3(
             //     $this->math->getSubtractVector3(
             //         $this->ballPosition,
@@ -361,7 +388,7 @@ class Shinigami extends SlimeHelper
             $defaultPosValue
         );
         $this->moveTo = $this->getConditionalVector3(
-            $this->isCatchLandingNearSelfNet,
+            $this->isCatchZoneNearSelfNet,
             $setPosition,
             $this->moveTo
         );
@@ -373,17 +400,17 @@ class Shinigami extends SlimeHelper
         $isCloseToCatchSpot = $this->compareFloats(
             FloatOperator::LESS_THAN,
             $distanceToReturnSpot,
-            ($this->saveSpot + .3) + .15
+            ($this->catchZone + .3) + .15
         );
 
-        $distanceToCatchLanding = $this->math->getDistance($this->catchLanding, $this->selfPosition);
+        $distanceToCatchZone = $this->math->getDistance($this->positionToCatchZone, $this->selfPosition);
         $isCloseToCatchNetBall = $this->compareFloats(
             FloatOperator::LESS_THAN,
-            $distanceToCatchLanding,
-            ($this->saveSpot + .3) + .15
+            $distanceToCatchZone,
+            ($this->catchZone + .3) + .15
         );
 
-        $distanceToSpikeSpot = $this->math->getDistance($this->offenseBallLanding, $this->selfPosition);
+        $distanceToSpikeSpot = $this->math->getDistance($this->positionToBallApex, $this->selfPosition);
         $isCloseToSpikeSpot = $this->compareFloats(
             FloatOperator::LESS_THAN,
             $distanceToSpikeSpot,
@@ -439,7 +466,7 @@ class Shinigami extends SlimeHelper
         $this->shouldJump = $shouldJump;
     }
 
-    public function getDefenseState(
+    public function getDesiredHit(
         Port $landingWhere,
         Port $landingWhen,
         float $moveDistance,
@@ -508,13 +535,58 @@ class Shinigami extends SlimeHelper
         $this->controller($this->moveTo, $this->shouldJump);
     }
 
-    public function eightGate() {}
+    public function eightGate()
+    {
+        $this->debug($this->timeToCatchZone);
+        $this->debugDrawDisc($this->positionToBallGround, .0, .6, "Yellow");
+        $this->debugDrawDisc($this->positionToCatchZone, .0, .6, "Blue");
+        $this->debugDrawDisc($this->positionToBallApex, .0, .6, "Red");
+
+        $set = $this->getDesiredHit(
+            $this->positionToCatchZone,
+            $this->timeToCatchZone,
+            $this->catchZone + .5,
+            .15,
+            $this->fromEnemyToBase,
+            .05
+        );
+
+        $spike = $this->getDesiredHit(
+            $this->positionToCatchZone,
+            $this->timeToCatchZone,
+            self::JUMP_HEIGHTS[STAT_JUMP],
+            .25,
+            $this->getDirectionToFarthestSide($this->opponentPosition),
+            .4
+        );
+
+        $finalMoveTo = $this->getConditionalVector3(
+            $this->compareFloats(
+                FloatOperator::EQUAL_TO,
+                $this->ballTouches,
+                3
+            ),
+            $set['moveTo'],
+            $spike['moveTo']
+        );
+
+        $finalJump = $this->getConditionalBool(
+            $this->compareFloats(
+                FloatOperator::EQUAL_TO,
+                $this->ballTouches,
+                3
+            ),
+            $set['shouldJump'],
+            $spike['shouldJump']
+        );
+
+        $this->controller($finalMoveTo, $finalJump);
+    }
 }
 
 $graph = new Graph();
 $name = $graph->version(NAME, 'C:\Users\Haba\Downloads\SlimeVolleyball_v0_6\AIComp_Data\Saves\/', false);
 $slime = new Shinigami($graph);
 $slime->initializeSlime($name['name'], COUNTRY, COLOR, STAT_SPEED, STAT_ACCELERATION, STAT_JUMP);
-$slime->shinigami();
-
+$slime->eightGate();
 $graph->toTxt($name['file']);

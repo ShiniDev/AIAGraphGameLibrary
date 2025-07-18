@@ -426,7 +426,7 @@ class SlimeHelper
      *  2.  GHOST – Perfect attacker (generic spike)
      * ------------------------------------------------------------- */
     public function ghostSpikeTarget(
-        Port|float $flightTime = 1.0,
+        Port|float $flightTime,
         Port|float $targetX,
         Port|float $targetZ
     ): Port {
