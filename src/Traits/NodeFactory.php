@@ -248,6 +248,11 @@ trait NodeFactory
         }
     }
 
+    public function getBool(bool $b)
+    {
+        return $this->createBool($b)->getOutput();
+    }
+
     public function getInverseBool(Port $boolOutput): Port
     {
         $inverse = $this->createNot();

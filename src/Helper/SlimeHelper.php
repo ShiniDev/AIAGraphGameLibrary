@@ -163,6 +163,17 @@ class SlimeHelper
 
     protected ?array $timeToLand = null;
 
+    // --- Pre-calculated Physics Constants ---
+    protected ?Port $gravity = null;
+    protected ?Port $ballRadius = null;
+    protected ?Port $netHeight = null;
+    protected ?Port $restitution = null;
+    protected ?Port $effectivePositiveX = null;
+    protected ?Port $effectiveNegativeX = null;
+    protected ?Port $effectivePositiveZ = null;
+    protected ?Port $effectiveNegativeZ = null;
+    protected ?Port $a_gravity = null; // 0.5 * gravity
+
     /**
      * SlimeHelper constructor.
      *
@@ -225,6 +236,17 @@ class SlimeHelper
             $this->getVolleyballFloat(VolleyballGetFloatModifier::BALL_TOUCHES_REMAINING),
             3
         );
+
+        // --- Pre-calculate Physics Constants for Simulations ---
+        $this->gravity = $this->getFloat(self::GRAVITY);
+        $this->ballRadius = $this->getFloat(self::BALL_RADIUS);
+        $this->netHeight = $this->getFloat(self::NET_HEIGHT);
+        $this->restitution = $this->getFloat(self::BALL_RESTITUTION);
+        $this->effectivePositiveX = $this->math->getSubtractValue($this->getFloat(self::STAGE_HALF_WIDTH), $this->ballRadius);
+        $this->effectiveNegativeX = $this->math->getInverseValue($this->effectivePositiveX);
+        $this->effectivePositiveZ = $this->math->getSubtractValue($this->getFloat(self::STAGE_HALF_DEPTH), $this->ballRadius);
+        $this->effectiveNegativeZ = $this->math->getInverseValue($this->effectivePositiveZ);
+        $this->a_gravity = $this->math->getMultiplyValue(0.5, $this->gravity);
     }
 
     /**
@@ -395,7 +417,7 @@ class SlimeHelper
         $velZ = $vel->getOutputZ();
 
         // Call the updated simulation with the full 3D state
-        // $bounce = $this->simulateBounceV3($t, $posX, $posY, $posZ, $velX, $velY, $velZ, 2);
+        // $bounce = $this->simulateBounceV3($roots['root_neg'], $posX, $posY, $posZ, $velX, $velY, $velZ, $n);
         $bounce = $this->simulateBounce($roots['root_neg'], $posX, $posZ, $velX, $velZ, $n);
 
         $land = $this->math->constructVector3($bounce['x'], $targetY, $bounce['z']);
@@ -432,27 +454,16 @@ class SlimeHelper
         Port $velZ,
         int $iterationN
     ): array {
-        // --- World Parameters ---
-        $gravity = $this->getFloat(self::GRAVITY);
-        $restitution = self::BALL_RESTITUTION;
-        $netHeight = $this->getFloat(self::NET_HEIGHT);
-        $ballRadius = $this->getFloat(self::BALL_RADIUS);
-        $effectivePositiveX = $this->math->getSubtractValue($this->getFloat(self::STAGE_HALF_WIDTH), $ballRadius);
-        $effectiveNegativeX = $this->math->getInverseValue($effectivePositiveX);
-        $effectivePositiveZ = $this->math->getSubtractValue($this->getFloat(self::STAGE_HALF_DEPTH), $ballRadius);
-        $effectiveNegativeZ = $this->math->getInverseValue($effectivePositiveZ);
-
         // --- Simulation Loop ---
         for ($i = 0; $i < $iterationN; $i++) {
             // 1. Calculate time to all boundaries
-            $a = $this->math->getMultiplyValue(0.5, $gravity);
             $b = $velY;
-            $timeX = $this->timeToWall($posX, $velX, $effectiveNegativeX, $effectivePositiveX);
-            $timeZ = $this->timeToWall($posZ, $velZ, $effectiveNegativeZ, $effectivePositiveZ);
+            $timeX = $this->timeToWall($posX, $velX, $this->effectiveNegativeX, $this->effectivePositiveX);
+            $timeZ = $this->timeToWall($posZ, $velZ, $this->effectiveNegativeZ, $this->effectivePositiveZ);
 
             // Time to hit the net's height
-            $c_net = $this->math->getSubtractValue($posY, $netHeight);
-            $roots_net = $this->math->getQuadraticFormula($a, $b, $c_net);
+            $c_net = $this->math->getSubtractValue($posY, $this->netHeight);
+            $roots_net = $this->math->getQuadraticFormula($this->a_gravity, $b, $c_net);
             $tNetTop = $roots_net['root_neg'];
 
             // 2. Validate the Net Top Collision
@@ -467,9 +478,9 @@ class SlimeHelper
 
             // 4. Update state to the point of impact
             $posX = $this->math->getAddValue($posX, $this->math->getMultiplyValue($velX, $timeNext));
-            $posY = $this->math->getAddValue($posY, $this->math->getAddValue($this->math->getMultiplyValue($velY, $timeNext), $this->math->getMultiplyValue($a, $this->math->getSquareValue($timeNext))));
+            $posY = $this->math->getAddValue($posY, $this->math->getAddValue($this->math->getMultiplyValue($velY, $timeNext), $this->math->getMultiplyValue($this->a_gravity, $this->math->getSquareValue($timeNext))));
             $posZ = $this->math->getAddValue($posZ, $this->math->getMultiplyValue($velZ, $timeNext));
-            $velY = $this->math->getAddValue($velY, $this->math->getMultiplyValue($gravity, $timeNext));
+            $velY = $this->math->getAddValue($velY, $this->math->getMultiplyValue($this->gravity, $timeNext));
             $timeRemaining = $this->math->getSubtractValue($timeRemaining, $timeNext);
 
             // --- 5. Reflect velocity based on what was hit (Corrected Chained Logic) ---
@@ -478,12 +489,12 @@ class SlimeHelper
             $isZWallHit = $this->math->compareFloats(FloatOperator::EQUAL_TO, $timeNext, $timeZ);
 
             // First, calculate the result of the net bounce logic
-            $velY_after_net = $this->math->getConditionalFloat($isNetTopHit, $this->math->getMultiplyValue($velY, -$restitution), $velY);
+            $velY_after_net = $this->math->getConditionalFloat($isNetTopHit, $this->math->getMultiplyValue($velY, -$this->restitution), $velY);
             $velX_after_net = $this->math->getConditionalFloat($isNetTopHit, $this->math->getMultiplyValue($velX, 0.2), $velX); // Dampen X-velocity
 
             // Then, use those results as the input for the wall bounce logic
-            $velX_after_walls = $this->math->getConditionalFloat($isXWallHit, $this->math->getMultiplyValue($velX, -$restitution), $velX_after_net);
-            $velZ_after_walls = $this->math->getConditionalFloat($isZWallHit, $this->math->getMultiplyValue($velZ, -$restitution), $velZ);
+            $velX_after_walls = $this->math->getConditionalFloat($isXWallHit, $this->math->getMultiplyValue($velX, -$this->restitution), $velX_after_net);
+            $velZ_after_walls = $this->math->getConditionalFloat($isZWallHit, $this->math->getMultiplyValue($velZ, -$this->restitution), $velZ);
 
             // Finally, update the main state variables for the next loop iteration
             $velX = $velX_after_walls;
@@ -648,10 +659,8 @@ class SlimeHelper
         );
 
         // --- 2. Calculate the Jump Trigger ---
-        $selfPosition = $this->createSlimeGetVector3(GetSlimeVector3Modifier::SELF_POSITION)->getOutput();
-
         // Condition A: Are we in position?
-        $distanceToTarget = $this->math->getDistance($selfPosition, $moveToTarget);
+        $distanceToTarget = $this->math->getDistance($this->selfPosition, $moveToTarget);
         $isAlreadyThere = $this->math->compareFloats(FloatOperator::LESS_THAN, $distanceToTarget, 2);
 
         // Condition B: Is it time to jump?
@@ -665,94 +674,6 @@ class SlimeHelper
             'moveTo' => $moveToTarget,
             'shouldJump' => $shouldJump
         ];
-    }
-
-    /**
-     * Calculates the target for a "perfect" spike.
-     *
-     * This function determines the ideal contact point and timing to execute
-     * a powerful, targeted spike. It calculates the required velocity to send
-     * the ball to a specific X, Z coordinate.
-     *
-     * @param Port|float $flightTime The desired time of flight for the ball.
-     * @param Port|float $targetX The target X coordinate.
-     * @param Port|float $targetZ The target Z coordinate.
-     * @return Port The calculated contact point vector for the spike.
-     */
-    public function ghostSpikeTarget(
-        Port|float $flightTime,
-        Port|float $targetX,
-        Port|float $targetZ
-    ): Port {
-        // default target = deep corner opposite to slime side
-        $opponentBackX = $this->getFloat(self::STAGE_HALF_WIDTH);
-        $opponentBackZ = $this->getFloat(self::STAGE_HALF_DEPTH);
-
-        $targetX = $targetX ?? $this->math->getMultiplyValue($opponentBackX, $this->getFloat(-1.0));
-        $targetZ = $targetZ ?? $this->math->getMultiplyValue($opponentBackZ, $this->getFloat(0.7));
-
-        $target = $this->math->constructVector3($targetX, 0.0, $targetZ);
-
-        // solve required outgoing velocity
-        $ballPos = $this->ballPosition;
-        $g       = $this->getFloat(self::GRAVITY);
-        $delta   = $this->math->getSubtractVector3($target, $ballPos);
-
-        // flat horizontal distance
-        $dxz     = $this->math->getMagnitude($this->math->constructVector3(
-            $this->math->splitVector3($delta)->getOutputX(),
-            0.0,
-            $this->math->splitVector3($delta)->getOutputZ()
-        ));
-
-        $flight  = is_float($flightTime) ? $this->getFloat($flightTime) : $flightTime;
-        $vxz     = $this->math->getDivideValue($dxz, $flight);
-
-        // y velocity for parabola that ends at 0
-        $vy      = $this->math->getAddValue(
-            $this->math->getMultiplyValue($g, $flight),
-            $this->math->getDivideValue(
-                $this->math->getMultiplyValue($g, $this->math->getSquareValue($flight)),
-                $this->math->getMultiplyValue($this->getFloat(2.0), $flight)
-            )
-        );
-        $vy      = $this->math->getMultiplyValue($vy, $this->getFloat(-1.0));
-
-        // desired ball velocity at contact
-        $desiredVel = $this->math->constructVector3(
-            $this->math->getMultiplyValue(
-                $this->math->getDivideValue(
-                    $this->math->splitVector3($delta)->getOutputX(),
-                    $this->math->getMagnitude($delta)
-                ),
-                $vxz
-            ),
-            $vy,
-            $this->math->getMultiplyValue(
-                $this->math->getDivideValue(
-                    $this->math->splitVector3($delta)->getOutputZ(),
-                    $this->math->getMagnitude($delta)
-                ),
-                $vxz
-            )
-        );
-
-        // place contact point slightly above ball on YOUR side
-        $contactOffset = $this->math->constructVector3(0.0, $this->getFloat(0.3), 0.0);
-        $contact       = $this->math->getAddVector3($ballPos, $contactOffset);
-
-        // move to contact point
-        // $this->moveTo($contact);
-        $dist = $this->math->getMagnitude(
-            $this->math->getSubtractVector3($contact, $this->getSlimeVector3(GetSlimeVector3Modifier::SELF_POSITION))
-        );
-        $closeEnough = $this->compareFloats(FloatOperator::LESS_THAN, $dist, 0.2);
-        $timeLeft    = $this->math->getSubtractValue($flight, $this->getFloat(0.1));
-        $jumpNow     = $this->computer->getAndGate($closeEnough, $timeLeft);
-        // $this->jump($jumpNow);
-
-        // apply impulse next frame if jump triggered
-        return $contact;
     }
 
     /**
@@ -979,9 +900,8 @@ class SlimeHelper
      */
     public function calculateOpponentTravelTime(Port $targetPoint): Port
     {
-        $opponentPosition = $this->createSlimeGetVector3(GetSlimeVector3Modifier::OPPONENT_POSITION)->getOutput();
-        $distance = $this->math->getDistance($opponentPosition, $targetPoint);
-        return $this->math->getDivideValue($distance, self::VELOCITY_MAP[5]['BOTH_DIRECTION']);
+        $distance = $this->math->getDistance($this->opponentPosition, $targetPoint);
+        return $this->math->getDivideValue($distance, self::MAX_SPEED_MAX);
     }
 
     /**
@@ -998,16 +918,16 @@ class SlimeHelper
     public function calculateTotalTimeToScore(Port $targetPoint, Port $interceptTime, Port $interceptPoint): Port
     {
         $distanceToTarget = $this->math->getDistance($interceptPoint, $targetPoint);
-        $ballFlightTime = $this->math->getDivideValue($distanceToTarget, $this->getFloat(12));
+        $ballFlightTime = $this->math->getDivideValue($distanceToTarget, $this->getFloat(self::JUMP_FORCE_MAX));
         return $this->math->getAddValue($interceptTime, $ballFlightTime);
     }
 
     /**
      * Finds the earliest possible point in time and space where the slime can intercept the ball.
      *
-     * This method checks future points along the ball's trajectory and determines
-     * if the slime can reach them in time. It's essential for planning any
-     * interaction with the ball.
+     * This method iteratively checks future points along the ball's trajectory (from 0.1s to 1.0s)
+     * to find the first point the slime can reach in time. This provides a more robust and optimal
+     * interception calculation than checking a few fixed points.
      *
      * @param Port $selfPosition Your slime's current position.
      * @param Port $ballPosition The ball's current position.
@@ -1017,20 +937,27 @@ class SlimeHelper
     public function findOptimalInterceptPoint(Port $selfPosition, Port $ballPosition, Port $ballVelocity): array
     {
         $maxSpeed = $this->getFloat(self::MAX_SPEED_MAX);
-        $t1 = $this->getFloat(0.2);
-        $pathPoint1 = $this->predictBallPosition($ballPosition, $ballVelocity, $t1);
-        $timeSelfMove1 = $this->math->getDivideValue($this->math->getDistance($selfPosition, $pathPoint1), $maxSpeed);
-        $isReachable1 = $this->math->compareFloats(FloatOperator::LESS_THAN_OR_EQUAL, $timeSelfMove1, $t1);
-        $t2 = $this->getFloat(0.4);
-        $pathPoint2 = $this->predictBallPosition($ballPosition, $ballVelocity, $t2);
-        $timeSelfMove2 = $this->math->getDivideValue($this->math->getDistance($selfPosition, $pathPoint2), $maxSpeed);
-        $isReachable2 = $this->math->compareFloats(FloatOperator::LESS_THAN_OR_EQUAL, $timeSelfMove2, $t2);
-        $interceptPoint = $this->math->getConditionalVector3($isReachable2, $pathPoint2, $pathPoint1);
-        $timeToIntercept = $this->math->getConditionalFloat($isReachable2, $t2, $t1);
-        $foundPoint = $this->compareBool(BooleanOperator::OR, $isReachable1, $isReachable2);
-        $finalInterceptPoint = $this->math->getConditionalVector3($foundPoint, $interceptPoint, $ballPosition);
-        $finalTimeToIntercept = $this->math->getConditionalFloat($foundPoint, $timeToIntercept, $this->getFloat(0.0));
-        return ['point' => $finalInterceptPoint, 'time' => $finalTimeToIntercept, 'found' => $foundPoint];
+
+        // --- Iterative Search for Intercept Point ---
+        $foundPoint = $this->getBool(false);
+        $interceptTime = $this->getFloat(1.0); // Default to a late time
+        $interceptPoint = $this->predictBallPosition($ballPosition, $ballVelocity, $interceptTime);
+
+        // Loop from 1.0s down to 0.1s to find the EARLIEST possible time.
+        for ($i = 10; $i >= 1; $i--) {
+            $t = $this->getFloat($i / 10.0);
+            $futureBallPos = $this->predictBallPosition($ballPosition, $ballVelocity, $t);
+            $timeForSlimeToReach = $this->math->getDivideValue($this->math->getDistance($selfPosition, $futureBallPos), $maxSpeed);
+
+            $isReachable = $this->math->compareFloats(FloatOperator::LESS_THAN_OR_EQUAL, $timeForSlimeToReach, $t);
+
+            // If it's reachable, this is our new best candidate.
+            $interceptTime = $this->math->getConditionalFloat($isReachable, $t, $interceptTime);
+            $interceptPoint = $this->math->getConditionalVector3($isReachable, $futureBallPos, $interceptPoint);
+            $foundPoint = $this->computer->getOrGate($foundPoint, $isReachable);
+        }
+
+        return ['point' => $interceptPoint, 'time' => $interceptTime, 'found' => $foundPoint];
     }
 
     /**
@@ -1096,7 +1023,7 @@ class SlimeHelper
     public function getKineticStrikePosition(Port $interceptPoint, Port $launchVelocity): Port
     {
         $direction = $this->math->getNormalizedVector3($launchVelocity);
-        $offsetDistance = self::SLIME_RADIUS - self::BALL_RADIUS;
+        $offsetDistance = $this->math->getAddValue(self::SLIME_RADIUS, self::BALL_RADIUS);
         $strikePosition = $this->math->movePointAlongVector($interceptPoint, $this->math->getInverseVector3($direction), $offsetDistance);
         $strikeSplit = $this->math->splitVector3($strikePosition);
         return $this->math->constructVector3($strikeSplit->getOutputX(), $this->getFloat(0.0), $strikeSplit->getOutputZ());
