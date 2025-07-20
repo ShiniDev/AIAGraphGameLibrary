@@ -62,7 +62,7 @@ class MightGuy extends SlimeHelper
         );
     }
 
-    public function getApexPosition(
+    public function getPositionInTime(
         Port $pos,
         Port $vel,
         Port $timeToApex
@@ -100,7 +100,7 @@ class MightGuy extends SlimeHelper
         $positionToCatchZone = $cZone['position'];
 
         $timeToBallApex = $this->getTimeToBallApex($this->ballVelocitySplit->y);
-        $positionToBallApex = $this->getApexPosition(
+        $positionToBallApex = $this->getPositionInTime(
             $this->ballPosition,
             $this->ballVelocity,
             $timeToBallApex

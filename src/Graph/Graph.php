@@ -179,7 +179,7 @@ class Graph implements \JsonSerializable
      * @param int $offsetX The horizontal offset between nodes in the layout.
      * @param int $offsetY The vertical offset between nodes in the layout.
      */
-    public function autoLayout(int $offsetX = 350, int $offsetY = 215)
+    public function autoLayout(int $offsetX = 350, int $offsetY = 215, bool $grid = false)
     {
         if (empty($this->serializableNodes)) {
             return;
@@ -225,7 +225,7 @@ class Graph implements \JsonSerializable
             }
         }
 
-        if ($visitedCount < count($this->serializableNodes)) {
+        if ($visitedCount < count($this->serializableNodes) or $grid) {
             // Cycle detected. Cannot perform topological sort.
             // Fallback to a simple grid layout to avoid errors.
             $this->gridLayout($offsetX, $offsetY);

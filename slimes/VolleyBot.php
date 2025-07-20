@@ -30,11 +30,11 @@ class VolleyBot extends SlimeHelper
     public function ai()
     {
         // --- Get Live Data Once ---
-        $selfPosition = $this->createSlimeGetVector3(GetSlimeVector3Modifier::SELF_POSITION)->getOutput();
-        $ballPosition = $this->createSlimeGetVector3(GetSlimeVector3Modifier::BALL_POSITION)->getOutput();
-        $ballVelocity = $this->createSlimeGetVector3(GetSlimeVector3Modifier::BALL_VELOCITY)->getOutput();
-        $ballIsOnMySide = $this->createVolleyballGetBool(VolleyballGetBoolModifier::BALL_IS_SELF_SIDE)->getOutput();
-        $touchesLeft = $this->createVolleyballGetFloat(VolleyballGetFloatModifier::BALL_TOUCHES_REMAINING)->getOutput();
+        $selfPosition = $this->getSlimeVector3(GetSlimeVector3Modifier::SELF_POSITION)->getOutput();
+        $ballPosition = $this->getSlimeVector3(GetSlimeVector3Modifier::BALL_POSITION)->getOutput();
+        $ballVelocity = $this->getSlimeVector3(GetSlimeVector3Modifier::BALL_VELOCITY)->getOutput();
+        $ballIsOnMySide = $this->getVolleyballBool(VolleyballGetBoolModifier::BALL_IS_SELF_SIDE)->getOutput();
+        $touchesLeft = $this->getVolleyballFloat(VolleyballGetFloatModifier::BALL_TOUCHES_REMAINING)->getOutput();
         $selfPosSplit = $this->math->splitVector3($selfPosition);
 
         // --- Primary State Check ---
@@ -153,7 +153,7 @@ class VolleyBot extends SlimeHelper
     }
     private function calculateOpponentTravelTime(Port $targetPoint): Port
     {
-        $opponentPosition = $this->createSlimeGetVector3(GetSlimeVector3Modifier::OPPONENT_POSITION)->getOutput();
+        $opponentPosition = $this->getSlimeVector3(GetSlimeVector3Modifier::OPPONENT_POSITION)->getOutput();
         $distance = $this->math->getDistance($opponentPosition, $targetPoint);
         return $this->math->getDivideValue($distance, $this->getFloat(self::OPPONENT_MAX_SPEED));
     }
@@ -212,12 +212,19 @@ class VolleyBot extends SlimeHelper
         $strikeSplit = $this->math->splitVector3($strikePosition);
         return $this->math->constructVector3($strikeSplit->getOutputX(), $this->getFloat(0.0), $strikeSplit->getOutputZ());
     }
+    public function main()
+    {
+        $name = "VolleyBot";
+        $color = "Blue";
+        $country = "USA";
+
+        $name = $this->graph->version($name, "C:\Users\Haba\Games\SlimeVolleyball_v0_82\AIComp_Data\Saves\/", false);
+        $this->initializeSlime($name['name'], $country, $color, STAT_SPEED, STAT_ACCELERATION, STAT_JUMP);
+        $this->ai();
+        $this->graph->toTxt($name['file']);
+    }
 }
 
 $graph = new Graph();
-$name = $graph->version("VolleyBot", "C:\Users\Haba\Downloads\SlimeVolleyball_v0_6\AIComp_Data\Saves\/", true);
-$slimeHelper = new VolleyBot($graph);
-$slimeHelper->initializeSlime($name['name'], "USA", "Blue", STAT_SPEED, STAT_ACCELERATION, STAT_JUMP);
-$slimeHelper->ai();
-
-$graph->toTxt($name['file']);
+$volleyBot = new VolleyBot($graph);
+$volleyBot->main();

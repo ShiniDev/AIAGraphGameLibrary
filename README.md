@@ -55,7 +55,7 @@ class YourSlime extends SlimeHelper
 $graph = new Graph();
 $slime = new YourSlime($graph);
 
-$slime->initializeKart(NAME, COUNTRY, COLOR, STAT_TOPSPEED, STAT_ACCELERATION, STAT_JUMP);
+$slime->initializeSlime(NAME, COUNTRY, COLOR, STAT_TOPSPEED, STAT_ACCELERATION, STAT_JUMP);
 $graph->toTxt("savefile.txt");
 ```
 

@@ -2,6 +2,7 @@
 
 namespace GraphLib\Helper;
 
+use Exception;
 use GraphLib\Enums\BooleanOperator;
 use GraphLib\Enums\FloatOperator;
 use GraphLib\Enums\GetSlimeVector3Modifier;
@@ -63,6 +64,56 @@ class SlimeHelper
         10 => 4.0710
     ];
 
+    public const VELOCITY_MAP = [
+        0 => [
+            'one_direction' => 3.81,
+            'both_directions' => 2.68986
+        ],
+        1 => [
+            'one_direction' => 4.61,
+            'both_directions' => 3.25466
+        ],
+        2 => [
+            'one_direction' => 5.41,
+            'both_directions' => 3.81946
+        ],
+        3 => [
+            'one_direction' => 6.21,
+            'both_directions' => 4.38426
+        ],
+        4 => [
+            'one_direction' => 7.01,
+            'both_directions' => 4.94906
+        ],
+        5 => [
+            'one_direction' => 7.81,
+            'both_directions' => 5.51386
+        ],
+        6 => [
+            'one_direction' => 8.61,
+            'both_directions' => 6.07866
+        ],
+        7 => [
+            'one_direction' => 9.41,
+            'both_directions' => 6.64346
+        ],
+        8 => [
+            'one_direction' => 10.21,
+            'both_directions' => 7.20826
+        ],
+        9 => [
+            'one_direction' => 11.01,
+            'both_directions' => 7.77306
+        ],
+        10 => [
+            'one_direction' => 11.81,
+            'both_directions' => 8.33786
+        ]
+    ];
+
+    public const JUMP_VELOCITY_INCREASE_ONE_DIRECTION = .19;
+    public const JUMP_VELOCITY_INCREASE_BOTH_DIRECTION = .14;
+
     // --- Ball Physics ---
     public const BALL_RADIUS = 0.3;
     public const BALL_MASS = 0.25;
@@ -92,6 +143,24 @@ class SlimeHelper
     protected ?Port $distanceToBall = null;
     protected ?Port $distanceToOpponent = null;
 
+    // Vector 3s
+    public ?Port $fromSelfToBall = null;
+    public ?Port $fromOpponentToBall = null;
+    public ?Port $fromBallToSelf = null;
+    public ?Port $fromBaseToEnemy = null;
+    public ?Port $fromEnemyToBase = null;
+    public ?Port $fromBallToOpponent = null;
+    public ?Port $distanceFromSelfToBall = null;
+    public ?Port $distanceFromOpponentToBall = null;
+    public ?Port $normalizedFromSelfToBall = null;
+    public ?Port $normalizedFromOpponentToBall = null;
+    public ?Port $dotProductBallToBase = null;
+    public ?Port $isBallGoingTowardsMe = null;
+    public ?Port $isBallGoingTowardsOpponent = null;
+    public ?Port $isBallSelfSide = null;
+    public ?Port $isBallOpponentSide = null;
+    public ?Port $ballTouches = null;
+
     protected ?array $timeToLand = null;
 
     public function __construct(Graph $graph)
@@ -120,6 +189,32 @@ class SlimeHelper
         // --- Initialize Relational Data ---
         $this->distanceToBall = $this->math->getDistance($this->ballPosition, $this->selfPosition);
         $this->distanceToOpponent = $this->math->getDistance($this->selfPosition, $this->opponentPosition);
+
+        $this->fromSelfToBall = $this->math->getSubtractVector3($this->ballPosition, $this->selfPosition);
+        $this->fromOpponentToBall = $this->math->getSubtractVector3($this->ballPosition, $this->opponentPosition);
+        $this->fromBallToSelf = $this->math->getSubtractVector3($this->selfPosition, $this->ballPosition);
+        $this->fromBallToOpponent = $this->math->getSubtractVector3($this->opponentPosition, $this->ballPosition);
+        $this->fromBaseToEnemy = $this->math->getNormalizedVector3(
+            $this->getVolleyballRelativePosition(VolleyballGetTransformModifier::OPPONENT_TEAM_SPAWN, RelativePositionModifier::SELF)
+        );
+        $this->fromEnemyToBase = $this->math->getNormalizedVector3(
+            $this->getVolleyballRelativePosition(VolleyballGetTransformModifier::SELF_TEAM_SPAWN, RelativePositionModifier::SELF)
+        );
+        $this->distanceFromSelfToBall = $this->math->getMagnitude($this->fromSelfToBall);
+        $this->distanceFromOpponentToBall = $this->math->getMagnitude($this->fromOpponentToBall);
+        $this->normalizedFromSelfToBall = $this->math->getNormalizedVector3($this->fromSelfToBall);
+        $this->normalizedFromOpponentToBall = $this->math->getNormalizedVector3($this->fromOpponentToBall);
+
+        $this->dotProductBallToBase = $this->getDotProduct($this->ballVelocity, $this->fromBaseToEnemy);
+        $this->isBallGoingTowardsOpponent = $this->compareFloats(FloatOperator::GREATER_THAN, $this->dotProductBallToBase, .4);
+        $this->isBallGoingTowardsMe = $this->compareFloats(FloatOperator::LESS_THAN, $this->dotProductBallToBase, -.4);
+        $this->isBallSelfSide = $this->getVolleyballBool(VolleyballGetBoolModifier::BALL_IS_SELF_SIDE);
+        $this->isBallOpponentSide = $this->compareBool(BooleanOperator::NOT, $this->isBallSelfSide);
+        $this->ballTouches = $this->getConditionalFloatV2(
+            $this->isBallSelfSide,
+            $this->getVolleyballFloat(VolleyballGetFloatModifier::BALL_TOUCHES_REMAINING),
+            3
+        );
     }
 
     public function initializeSlime(string $name, string $country, string $color, float $speed, float $acceleration, float $jumping)
@@ -379,6 +474,43 @@ class SlimeHelper
         return $this->math->getDirection($entityPosition, $targetPoint);
     }
 
+    public function getTimeToPositionXZ(Vector3Split $tXZ, Vector3Split $pXZ, $speed)
+    {
+        $dx = $this->getSubtractValue(
+            $tXZ->x,
+            $pXZ->x
+        );
+        $dz = $this->getSubtractValue(
+            $tXZ->z,
+            $pXZ->z
+        );
+        $dx = $this->getAbsValue($dx);
+        $dz = $this->getAbsValue($dz);
+        $shorterDist = $this->getMinValue(
+            $dx,
+            $dz
+        );
+        $longerDist = $this->getMaxValue(
+            $dx,
+            $dz
+        );
+        $tDiagonal = $this->getDivideValue(
+            $this->getMultiplyValue(
+                $shorterDist,
+                1.414
+            ),
+            self::VELOCITY_MAP[$speed]['both_directions']
+        );
+        $tCardinal = $this->getDivideValue(
+            $this->getSubtractValue(
+                $longerDist,
+                $shorterDist
+            ),
+            self::VELOCITY_MAP[$speed]['one_direction']
+        );
+        return $this->getAddValue($tDiagonal, $tCardinal);
+    }
+
     /**
      * Implements the "Shadow" micro-AI for perfect defense.
      * Calculates the optimal defensive position and a just-in-time jump.
@@ -501,68 +633,196 @@ class SlimeHelper
         return $contact;
     }
 
-    /* -------------------------------------------------------------
-     *  3.  WALL-BOUNCE KILL
-     * ------------------------------------------------------------- */
-    public function wallBounceTarget(): Port
-    {
-        // pick a spot on side wall then floor
-        $wallX = $this->getFloat(self::STAGE_HALF_WIDTH);
-        $wallZ = $this->math->getMultiplyValue($this->getFloat(self::STAGE_HALF_DEPTH), $this->getFloat(0.8));
-
-        $wallTarget = $this->math->constructVector3($wallX, $this->getFloat(self::NET_HEIGHT), $wallZ);
-        // use same spike routine but aim at wall first
-        return $this->ghostSpikeTarget($this->getFloat(0.9), $wallX, $wallZ);
-    }
-
-    /* -------------------------------------------------------------
-     *  4.  SOFT DROP SHOT
-     * ------------------------------------------------------------- */
-    public function softDropTarget(): Port
-    {
-        // shallow arc landing just over net
-        $shortX = $this->math->getMultiplyValue($this->getFloat(self::STAGE_HALF_WIDTH), $this->getFloat(-0.1));
-        $shortZ = $this->math->getMultiplyValue($this->getFloat(self::STAGE_HALF_DEPTH), $this->getFloat(0.3));
-        return $this->ghostSpikeTarget($this->getFloat(0.5), $shortX, $shortZ);
-    }
-
-    /* -------------------------------------------------------------
-     *  5.  THIRD-TOUCH ALWAYS ATTACK
-     * ------------------------------------------------------------- */
-    public function thirdTouchAttack()
-    {
-        $touches = $this->getVolleyballFloat(VolleyballGetFloatModifier::BALL_TOUCHES_REMAINING);
-        $isThird = $this->compareFloats(FloatOperator::EQUAL_TO, $touches, 1);
-        // if (!$isThird->getValue()) return null;
-
-        // force any attack, drop preferred if close
-        $distNet = $this->math->getAbsValue(
-            $this->math->splitVector3(
-                $this->getSlimeVector3(GetSlimeVector3Modifier::SELF_POSITION)
-            )->getOutputX()
+    public function getDesiredHit(
+        Port $landingWhere,
+        Port $landingWhen,
+        float $moveDistance,
+        float $jumpTimeLeft,
+        Port $directionToStepBack,
+        Port|float $howFarToStepBack
+    ): array {
+        $howFarToStepBack = $this->getFloat($howFarToStepBack);
+        $moveToTarget = $this->math->movePointAlongVector(
+            $landingWhere,
+            $directionToStepBack,
+            $howFarToStepBack
         );
-        $closeNet = $this->compareFloats(FloatOperator::LESS_THAN, $distNet, 3.0);
-        // return $this->math->getConditionalVector3(
-        //     $closeNet,
-        //     $this->softDropTarget(),
-        //     // $this->ghostSpikeTarget()
-        // );
+        $distanceToTarget = $this->math->getDistance($this->selfPosition, $moveToTarget);
+        $isAlreadyThere = $this->math->compareFloats(FloatOperator::LESS_THAN, $distanceToTarget, $moveDistance);
+
+        $isTimeToJump = $this->math->compareFloats(FloatOperator::LESS_THAN_OR_EQUAL, $landingWhen, $jumpTimeLeft);
+        $shouldJump = $this->computer->getAndGate($isAlreadyThere, $isTimeToJump);
+        return [
+            'moveTo' => $moveToTarget,
+            'shouldJump' => $shouldJump
+        ];
     }
 
-    /* -------------------------------------------------------------
-     *  6.  FOURTH-TOUCH PANIC (keep ball alive)
-     * ------------------------------------------------------------- */
-    public function fourthTouchLob(): ?Port
+    public function getTimeToBallApex(Port $velocityY)
     {
-        $touches = $this->getVolleyballFloat(VolleyballGetFloatModifier::BALL_TOUCHES_REMAINING);
-        $isZero  = $this->compareFloats(FloatOperator::EQUAL_TO, $touches, 0);
-        $mySide  = $this->getVolleyballBool(VolleyballGetBoolModifier::BALL_IS_SELF_SIDE);
-        $panic   = $this->computer->getAndGate($isZero, $mySide);
-        // if (!$panic->getValue()) return null;
+        return $this->getDivideValue(
+            $velocityY,
+            $this->getAbsValue(self::GRAVITY)
+        );
+    }
 
-        // high lob to center of own side
-        $spawn = $this->getVolleyballRelativePosition(VolleyballGetTransformModifier::SELF_TEAM_SPAWN, RelativePositionModifier::SELF);
-        $spawn = $this->math->splitVector3($spawn);
-        return $this->ghostSpikeTarget($this->getFloat(1.5), $spawn->getOutputX(), $spawn->getOutputZ());
+    public function getTimeToPosition(Port $targetPos, Port $currentPos, Port $currentVel)
+    {
+        if ($targetPos->type !== "float") {
+            throw new Exception("Use only for linear calculations.");
+        } else {
+            return $this->getDivideValue(
+                $this->getSubtractValue($targetPos, $currentPos),
+                $currentVel
+            );
+        }
+    }
+
+    public function getPositionInTime(
+        Port $pos,
+        Port $vel,
+        Port $timeToApex
+    ) {
+        $b = $this->math->getScaleVector3(
+            $vel,
+            $timeToApex
+        );
+        $c = $this->math->getScaleVector3(
+            $this->math->getScaleVector3(
+                $this->math->constructVector3(0, self::GRAVITY, 0),
+                $this->math->getSquareValue($timeToApex)
+            ),
+            .5
+        );
+
+        return $this->math->getAddVector3(
+            $pos,
+            $this->math->getAddVector3(
+                $b,
+                $c
+            )
+        );
+    }
+
+    public function calculateKineticStrike(Port $interceptPoint, Port $targetPoint, float $timeOfFlight): Port
+    {
+        $tofPort = $this->getFloat($timeOfFlight);
+        $launchVelocity = $this->calculateLaunchVelocity($interceptPoint, $targetPoint, $tofPort);
+        return $this->getKineticStrikePosition($interceptPoint, $launchVelocity);
+    }
+    public function findGuaranteedShot(Port $selfPosition, Port $interceptTime, Port $interceptPoint): array
+    {
+        $selfPosSplit = $this->math->splitVector3($selfPosition);
+        $amIOnPositiveSide = $this->math->compareFloats(FloatOperator::GREATER_THAN, $selfPosSplit->getOutputX(), 0.0);
+        $opponentSideX = $this->math->getConditionalFloat($amIOnPositiveSide, $this->getFloat(-1.0), $this->getFloat(1.0));
+
+        // --- 1. Define all 4 corner targets ---
+        $target1 = $this->math->constructVector3($this->math->getMultiplyValue($opponentSideX, self::STAGE_HALF_WIDTH - 0.5), self::BALL_RADIUS, self::STAGE_HALF_DEPTH - 0.5);
+        $target2 = $this->math->constructVector3($this->math->getMultiplyValue($opponentSideX, self::STAGE_HALF_WIDTH - 0.5), self::BALL_RADIUS, -self::STAGE_HALF_DEPTH + 0.5);
+        $target3 = $this->math->constructVector3($this->math->getMultiplyValue($opponentSideX, 1.5), self::BALL_RADIUS, self::STAGE_HALF_DEPTH - 0.5);
+        $target4 = $this->math->constructVector3($this->math->getMultiplyValue($opponentSideX, 1.5), self::BALL_RADIUS, -self::STAGE_HALF_DEPTH + 0.5);
+
+        // --- 2. Calculate "Time Advantage" for each target ---
+        $adv1 = $this->calculateTimeAdvantage($target1, $interceptTime, $interceptPoint);
+        $adv2 = $this->calculateTimeAdvantage($target2, $interceptTime, $interceptPoint);
+        $adv3 = $this->calculateTimeAdvantage($target3, $interceptTime, $interceptPoint);
+        $adv4 = $this->calculateTimeAdvantage($target4, $interceptTime, $interceptPoint);
+
+        // --- 3. Iteratively Find the Best Target ---
+        // Start by assuming Target 1 is the best.
+        $bestTarget = $target1;
+        $bestAdvantage = $adv1;
+
+        // Compare with Target 2
+        $is2Better = $this->math->compareFloats(FloatOperator::GREATER_THAN, $adv2, $bestAdvantage);
+        $bestTarget = $this->math->getConditionalVector3($is2Better, $target2, $bestTarget);
+        $bestAdvantage = $this->math->getConditionalFloat($is2Better, $adv2, $bestAdvantage);
+
+        // Compare with Target 3
+        $is3Better = $this->math->compareFloats(FloatOperator::GREATER_THAN, $adv3, $bestAdvantage);
+        $bestTarget = $this->math->getConditionalVector3($is3Better, $target3, $bestTarget);
+        $bestAdvantage = $this->math->getConditionalFloat($is3Better, $adv3, $bestAdvantage);
+
+        // Compare with Target 4
+        $is4Better = $this->math->compareFloats(FloatOperator::GREATER_THAN, $adv4, $bestAdvantage);
+        $bestTarget = $this->math->getConditionalVector3($is4Better, $target4, $bestTarget);
+        $bestAdvantage = $this->math->getConditionalFloat($is4Better, $adv4, $bestAdvantage);
+
+        // --- 4. Final Decision ---
+        // A shot is "guaranteed" if the best advantage found is greater than zero.
+        $foundGuaranteedShot = $this->math->compareFloats(FloatOperator::GREATER_THAN, $bestAdvantage, 0.0);
+
+        return ['target' => $bestTarget, 'found' => $foundGuaranteedShot];
+    }
+
+    /**
+     * Helper to calculate Time Advantage = Opponent's Travel Time - Total Time to Score
+     */
+    public function calculateTimeAdvantage(Port $targetPoint, Port $interceptTime, Port $interceptPoint): Port
+    {
+        $t_opp = $this->calculateOpponentTravelTime($targetPoint);
+        $t_score = $this->calculateTotalTimeToScore($targetPoint, $interceptTime, $interceptPoint);
+        return $this->math->getSubtractValue($t_opp, $t_score);
+    }
+    public function calculateOpponentTravelTime(Port $targetPoint): Port
+    {
+        $opponentPosition = $this->createSlimeGetVector3(GetSlimeVector3Modifier::OPPONENT_POSITION)->getOutput();
+        $distance = $this->math->getDistance($opponentPosition, $targetPoint);
+        return $this->math->getDivideValue($distance, self::VELOCITY_MAP[5]['BOTH_DIRECTION']);
+    }
+    public function calculateTotalTimeToScore(Port $targetPoint, Port $interceptTime, Port $interceptPoint): Port
+    {
+        $distanceToTarget = $this->math->getDistance($interceptPoint, $targetPoint);
+        $ballFlightTime = $this->math->getDivideValue($distanceToTarget, $this->getFloat(12));
+        return $this->math->getAddValue($interceptTime, $ballFlightTime);
+    }
+    public function findOptimalInterceptPoint(Port $selfPosition, Port $ballPosition, Port $ballVelocity): array
+    {
+        $maxSpeed = $this->getFloat(self::MAX_SPEED_MAX);
+        $t1 = $this->getFloat(0.2);
+        $pathPoint1 = $this->predictBallPosition($ballPosition, $ballVelocity, $t1);
+        $timeSelfMove1 = $this->math->getDivideValue($this->math->getDistance($selfPosition, $pathPoint1), $maxSpeed);
+        $isReachable1 = $this->math->compareFloats(FloatOperator::LESS_THAN_OR_EQUAL, $timeSelfMove1, $t1);
+        $t2 = $this->getFloat(0.4);
+        $pathPoint2 = $this->predictBallPosition($ballPosition, $ballVelocity, $t2);
+        $timeSelfMove2 = $this->math->getDivideValue($this->math->getDistance($selfPosition, $pathPoint2), $maxSpeed);
+        $isReachable2 = $this->math->compareFloats(FloatOperator::LESS_THAN_OR_EQUAL, $timeSelfMove2, $t2);
+        $interceptPoint = $this->math->getConditionalVector3($isReachable2, $pathPoint2, $pathPoint1);
+        $timeToIntercept = $this->math->getConditionalFloat($isReachable2, $t2, $t1);
+        $foundPoint = $this->compareBool(BooleanOperator::OR, $isReachable1, $isReachable2);
+        $finalInterceptPoint = $this->math->getConditionalVector3($foundPoint, $interceptPoint, $ballPosition);
+        $finalTimeToIntercept = $this->math->getConditionalFloat($foundPoint, $timeToIntercept, $this->getFloat(0.0));
+        return ['point' => $finalInterceptPoint, 'time' => $finalTimeToIntercept, 'found' => $foundPoint];
+    }
+    public function predictBallPosition(Port $p0, Port $v0, Port $time): Port
+    {
+        $p0_split = $this->math->splitVector3($p0);
+        $v0_split = $this->math->splitVector3($v0);
+        $futureX = $this->math->getAddValue($p0_split->getOutputX(), $this->math->getMultiplyValue($v0_split->getOutputX(), $time));
+        $futureZ = $this->math->getAddValue($p0_split->getOutputZ(), $this->math->getMultiplyValue($v0_split->getOutputZ(), $time));
+        $vy_t = $this->math->getMultiplyValue($v0_split->getOutputY(), $time);
+        $g_t_squared = $this->math->getMultiplyValue(0.5 * self::GRAVITY, $this->math->getSquareValue($time));
+        $futureY = $this->math->getAddValue($p0_split->getOutputY(), $this->math->getAddValue($vy_t, $g_t_squared));
+        return $this->math->constructVector3($futureX, $futureY, $futureZ);
+    }
+    public function calculateLaunchVelocity(Port $interceptPoint, Port $targetPoint, Port $timeOfFlight): Port
+    {
+        $interceptSplit = $this->math->splitVector3($interceptPoint);
+        $targetSplit = $this->math->splitVector3($targetPoint);
+        $launchX = $this->math->getDivideValue($this->math->getSubtractValue($targetSplit->getOutputX(), $interceptSplit->getOutputX()), $timeOfFlight);
+        $launchZ = $this->math->getDivideValue($this->math->getSubtractValue($targetSplit->getOutputZ(), $interceptSplit->getOutputZ()), $timeOfFlight);
+        $y_diff = $this->math->getSubtractValue($targetSplit->getOutputY(), $interceptSplit->getOutputY());
+        $g_t_squared = $this->math->getMultiplyValue(0.5 * self::GRAVITY, $this->math->getSquareValue($timeOfFlight));
+        $y_component = $this->math->getSubtractValue($y_diff, $g_t_squared);
+        $launchY = $this->math->getDivideValue($y_component, $timeOfFlight);
+        return $this->math->constructVector3($launchX, $launchY, $launchZ);
+    }
+    public function getKineticStrikePosition(Port $interceptPoint, Port $launchVelocity): Port
+    {
+        $direction = $this->math->getNormalizedVector3($launchVelocity);
+        $offsetDistance = self::SLIME_RADIUS - self::BALL_RADIUS;
+        $strikePosition = $this->math->movePointAlongVector($interceptPoint, $this->math->getInverseVector3($direction), $offsetDistance);
+        $strikeSplit = $this->math->splitVector3($strikePosition);
+        return $this->math->constructVector3($strikeSplit->getOutputX(), $this->getFloat(0.0), $strikeSplit->getOutputZ());
     }
 }

@@ -33,9 +33,15 @@ class ComputerHelper
     /**
      * Creates an AND gate. Returns true only if both inputs are true.
      */
-    public function getAndGate(Port $inputA, Port $inputB): Port
+    public function getAndGate(Port $inputA, Port $inputB, Port ...$inputs): Port
     {
-        return $this->compareBool(BooleanOperator::AND, $inputA, $inputB);
+        $and = $this->compareBool(BooleanOperator::AND, $inputA, $inputB);
+        if (count($inputs)) {
+            foreach ($inputs as $input) {
+                $and = $this->compareBool(BooleanOperator::AND, $and, $input);
+            }
+        }
+        return $and;
     }
 
     /**
@@ -52,9 +58,15 @@ class ComputerHelper
      * Creates an OR gate. Returns true if at least one input is true.
      * This is built using the principle: A or B = not((not A) and (not B))
      */
-    public function getOrGate(Port $inputA, Port $inputB): Port
+    public function getOrGate(Port $inputA, Port $inputB, Port ...$inputs): Port
     {
-        return $this->compareBool(BooleanOperator::OR, $inputA, $inputB);
+        $or = $this->compareBool(BooleanOperator::OR, $inputA, $inputB);
+        if (count($inputs)) {
+            foreach ($inputs as $input) {
+                $or = $this->compareBool(BooleanOperator::OR, $or, $input);
+            }
+        }
+        return $or;
     }
 
 
