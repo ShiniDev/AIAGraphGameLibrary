@@ -160,6 +160,14 @@ class SlimeHelper
     public ?Port $isBallSelfSide = null;
     public ?Port $isBallOpponentSide = null;
     public ?Port $ballTouches = null;
+    public ?Port $baseSide = null;
+    public ?Port $isOpponentHasNoJump = null;
+    public ?Port $isOpponentNearNet = null;
+    public ?Port $isSelfNearNet = null;
+    public ?Port $normalizedFromBallToSelf = null;
+    public ?Port $normalizedFromBallToOpponent = null;
+    public ?Port $normalizedFromBaseToEnemy = null;
+    public ?Port $normalizedFromEnemyToBase = null;
 
     protected ?array $timeToLand = null;
 
@@ -173,6 +181,9 @@ class SlimeHelper
     protected ?Port $effectivePositiveZ = null;
     protected ?Port $effectiveNegativeZ = null;
     protected ?Port $a_gravity = null; // 0.5 * gravity
+
+    public float $opponentNearNet = 2; // Distance to consider opponent near the net
+    public float $selfNearNet = 2; // Distance to consider self near the net
 
     /**
      * SlimeHelper constructor.
@@ -225,6 +236,11 @@ class SlimeHelper
         $this->distanceFromOpponentToBall = $this->math->getMagnitude($this->fromOpponentToBall);
         $this->normalizedFromSelfToBall = $this->math->getNormalizedVector3($this->fromSelfToBall);
         $this->normalizedFromOpponentToBall = $this->math->getNormalizedVector3($this->fromOpponentToBall);
+        $this->normalizedFromBallToSelf = $this->math->getNormalizedVector3($this->fromBallToSelf);
+        $this->normalizedFromBallToOpponent = $this->math->getNormalizedVector3($this->fromBallToOpponent);
+        $this->normalizedFromBaseToEnemy = $this->math->getNormalizedVector3($this->fromBaseToEnemy);
+        $this->normalizedFromEnemyToBase = $this->math->getNormalizedVector3($this->fromEnemyToBase);
+
 
         $this->dotProductBallToBase = $this->getDotProduct($this->ballVelocity, $this->fromBaseToEnemy);
         $this->isBallGoingTowardsOpponent = $this->compareFloats(FloatOperator::GREATER_THAN, $this->dotProductBallToBase, .4);
@@ -236,6 +252,30 @@ class SlimeHelper
             $this->getVolleyballFloat(VolleyballGetFloatModifier::BALL_TOUCHES_REMAINING),
             3
         );
+        $this->baseSide = $this->math->splitVector3(
+            $this->getVolleyballRelativePosition(
+                VolleyballGetTransformModifier::SELF_TEAM_SPAWN,
+                RelativePositionModifier::BACKWARD
+            )
+        )->getOutputX();
+
+        $this->isOpponentHasNoJump = $this->compareBool(
+            BooleanOperator::NOT,
+            $this->getVolleyballBool(VolleyballGetBoolModifier::OPPONENT_CAN_JUMP)
+        );
+        $this->isOpponentNearNet = $this->compareFloats(
+            FloatOperator::LESS_THAN,
+            $this->getAbsValue($this->opponentPositionSplit->x),
+            $this->opponentNearNet
+        );
+
+        $this->isSelfNearNet = $this->compareFloats(
+            FloatOperator::LESS_THAN,
+            $this->getAbsValue($this->selfPositionSplit->x),
+            $this->selfNearNet
+        );
+
+
 
         // --- Pre-calculate Physics Constants for Simulations ---
         $this->gravity = $this->getFloat(self::GRAVITY);
@@ -715,6 +755,38 @@ class SlimeHelper
             'shouldJump' => $shouldJump
         ];
     }
+
+    public function getDelayedHit(
+        Port $landingWhere,
+        Port $landingWhen,
+        float $moveDistance,
+        float $jumpTimeLeft,
+        float $moveTimeLeft,
+        Port $directionToStepBack,
+        Port|float $howFarToStepBack
+    ): array {
+        $howFarToStepBack = $this->getFloat($howFarToStepBack);
+        $moveToTarget = $this->math->movePointAlongVector(
+            $landingWhere,
+            $directionToStepBack,
+            $howFarToStepBack
+        );
+        $distanceToTarget = $this->math->getDistance($this->selfPosition, $moveToTarget);
+        $isAlreadyThere = $this->math->compareFloats(FloatOperator::LESS_THAN, $distanceToTarget, $moveDistance);
+        $isTimeToMove = $this->math->compareFloats(FloatOperator::LESS_THAN_OR_EQUAL, $landingWhen, $moveTimeLeft);
+        $moveToTarget = $this->getConditionalVector3(
+            $isTimeToMove,
+            $landingWhere,
+            $moveToTarget
+        );
+        $isTimeToJump = $this->math->compareFloats(FloatOperator::LESS_THAN_OR_EQUAL, $landingWhen, $jumpTimeLeft);
+        $shouldJump = $this->computer->getAndGate($isAlreadyThere, $isTimeToJump);
+        return [
+            'moveTo' => $moveToTarget,
+            'shouldJump' => $shouldJump
+        ];
+    }
+
 
     /**
      * Calculates the time it takes for the ball to reach its vertical apex.

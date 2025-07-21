@@ -79,6 +79,7 @@ class Slime extends SlimeHelper
             $this->math->constructVector3($defaultNetPosition, 0, 0),
             $this->math->constructVector3($defaultDefensePosition, 0, 0)
         );
+
         $this->catchPointOnOurSide = $this->compareFloats(
             FloatOperator::EQUAL_TO,
             $this->math->getSignValue($this->baseSide),
@@ -145,9 +146,12 @@ class Slime extends SlimeHelper
             $this->isBallGoingTowardsMe,
             $this->compareFloats(FloatOperator::EQUAL_TO, $this->ballTouches, 3),
         );
-        $this->catching = $this->computer->getAndGate(
+        $this->catching = $this->computer->getOrGate(
             $this->defense,
-            $this->catchPointOnOurSide,
+            $this->computer->getAndGate(
+                $this->catchPointOnOurSide,
+                $this->isBallOpponentSide
+            )
         );
         $this->blocking = $this->computer->getAndGate(
             $this->defense,
@@ -160,14 +164,13 @@ class Slime extends SlimeHelper
             $this->blocking,
             $this->isOpponentHasNoJump
         );
-        $this->netBlocking = $this->defense;
         $this->attack = $this->computer->getAndGate(
             $this->isBallSelfSide,
             $this->compareFloats(
                 FloatOperator::LESS_THAN_OR_EQUAL,
                 $this->ballTouches,
                 2
-            )
+            ),
         );
     }
 
@@ -289,16 +292,16 @@ class Slime extends SlimeHelper
             )
         );
 
-        $netBlocking = $this->computer->getOrGate(
-            $this->computer->getAndGate(
-                $this->netBlocking,
-                $canBlockNet,
-            ),
-            $this->computer->getAndGate(
-                $this->netBlocking,
-                $shouldBlockNet
-            )
-        );
+        // $netBlocking = $this->computer->getOrGate(
+        //     $this->computer->getAndGate(
+        //         $this->netBlocking,
+        //         $canBlockNet,
+        //     ),
+        //     $this->computer->getAndGate(
+        //         $this->netBlocking,
+        //         $shouldBlockNet
+        //     )
+        // );
 
         $slimeBlock = $this->math->movePointAlongVector(
             $this->catchPoint,
@@ -310,28 +313,29 @@ class Slime extends SlimeHelper
         );
 
         $moveTo = $this->getConditionalVector3(
+            $this->catching,
+            $catch,
+            $this->defaultDefensePosition
+        );
+
+        $moveTo = $this->getConditionalVector3(
+            $shouldBlockNet,
+            $ballOnNetPos,
+            $moveTo
+        );
+
+        $moveTo = $this->getConditionalVector3(
             $this->blocking,
             $slimeBlock,
-            $this->getConditionalVector3(
-                $netBlocking,
-                $ballOnNetPos,
-                $this->getConditionalVector3(
-                    $this->catching,
-                    $catch,
-                    $this->defaultDefensePosition
-                )
-            )
+            $moveTo
         );
 
         $jump = $this->getConditionalBool(
             $this->jumpBlocking,
             $this->jumpBlocking,
-            $this->getConditionalBool(
-                $netBlocking,
-                $netBlocking,
-                $this->createBool(false)->getOutput()
-            )
+            $canBlockNet
         );
+
 
         /* 
         // Slime Mirroring on Net
@@ -408,24 +412,16 @@ class Slime extends SlimeHelper
         $defense = $this->defense();
         $attack = $this->attack();
 
-        $isDefense = $this->computer->getOrGate(
-            $this->defense,
-            $this->catching,
-            $this->blocking,
-            $this->netBlocking,
-            $this->jumpBlocking
-        );
-
         $moveTo = $this->getConditionalVector3(
-            $isDefense,
-            $defense['moveTo'],
-            $attack['moveTo']
+            $this->attack,
+            $attack['moveTo'],
+            $defense['moveTo']
         );
 
         $jump = $this->getConditionalBool(
-            $isDefense,
-            $defense['jump'],
+            $this->attack,
             $attack['jump'],
+            $defense['jump'],
         );
 
         $moveToSplit = $this->math->splitVector3($moveTo);
