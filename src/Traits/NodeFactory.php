@@ -18,6 +18,7 @@ use GraphLib\Nodes\ClampFloat;
 use GraphLib\Nodes\CompareBool;
 use GraphLib\Nodes\CompareFloats;
 use GraphLib\Nodes\ConditionalSetFloat;
+use GraphLib\Nodes\ConditionalSetFloatV2;
 use GraphLib\Nodes\ConstructKartProperties;
 use GraphLib\Nodes\ConstructVector3;
 use GraphLib\Nodes\Country;
@@ -276,6 +277,17 @@ trait NodeFactory
 
     public function getConditionalFloat(Port $condition, float|Port $ifTrue, float|Port $ifFalse): Port
     {
+        if (defined('SLIME')) {
+            $ifTruePort = is_float($ifTrue) ? $this->getFloat($ifTrue) : $ifTrue;
+            $ifFalsePort = is_float($ifFalse) ? $this->getFloat($ifFalse) : $ifFalse;
+
+            $node = new ConditionalSetFloatV2($this->graph);
+            $node->connectCondition($condition);
+            $node->connectInputFloat1($ifTruePort);
+            $node->connectInputFloat2($ifFalsePort);
+
+            return $node->getOutput();
+        }
         $truePortion = $this->setCondFloat(true, $condition, $ifTrue);
         $falsePortion = $this->setCondFloat(false, $condition, $ifFalse);
         return $this->getAddValue($truePortion, $falsePortion);

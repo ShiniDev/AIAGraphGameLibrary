@@ -258,6 +258,7 @@ class SlimeHelper
                 RelativePositionModifier::BACKWARD
             )
         )->getOutputX();
+        $this->baseSide = $this->math->getSignValue($this->baseSide);
 
         $this->isOpponentHasNoJump = $this->compareBool(
             BooleanOperator::NOT,
