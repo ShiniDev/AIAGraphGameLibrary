@@ -2,6 +2,7 @@
 
 namespace GraphLib\Helper;
 
+use GraphLib\Enums\FloatOperator;
 use GraphLib\Enums\OperationModifier;
 use GraphLib\Graph\Port;
 use GraphLib\Traits\SlimeFactory;
@@ -295,5 +296,50 @@ class MathHelperV2 extends MathHelper
         $result = $this->getExpValue($product);
 
         return $result;
+    }
+
+    /**
+     * Optimized version using sign checks for quadrant detection
+     */
+    public function getATan2Optimized(Port $y, Port $x): Port
+    {
+        $pi = $this->getFloat(M_PI);
+        $half_pi = $this->getFloat(M_PI / 2);
+        $zero = $this->getFloat(0);
+
+        // Compute base angle
+        $atan_base = $this->getAtanValue($this->getDivideValue($y, $x));
+
+        // Quadrant adjustments using sign operations
+        $x_sign = $this->getSignValue($x);
+        $y_sign = $this->getSignValue($y);
+
+        $adjustment = $this->getConditionalFloatV2(
+            $this->compareFloats(FloatOperator::LESS_THAN, $x_sign, $zero),
+            $this->getConditionalFloatV2(
+                $this->compareFloats(FloatOperator::GREATER_THAN_OR_EQUAL, $y_sign, $zero),
+                $pi,
+                $this->getMultiplyValue($pi, $this->getFloat(-1))
+            ),
+            $zero
+        );
+
+        // Handle x=0 cases
+        $x_zero = $this->compareFloats(FloatOperator::EQUAL_TO, $x, $zero);
+        $angle_when_x_zero = $this->getConditionalFloatV2(
+            $this->compareFloats(FloatOperator::GREATER_THAN, $y, $zero),
+            $half_pi,
+            $this->getConditionalFloatV2(
+                $this->compareFloats(FloatOperator::LESS_THAN, $y, $zero),
+                $this->getMultiplyValue($half_pi, $this->getFloat(-1)),
+                $zero
+            )
+        );
+
+        return $this->getConditionalFloatV2(
+            $x_zero,
+            $angle_when_x_zero,
+            $this->getAddValue($atan_base, $adjustment)
+        );
     }
 }

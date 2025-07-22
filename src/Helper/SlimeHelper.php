@@ -154,6 +154,7 @@ class SlimeHelper
     public ?Port $distanceFromOpponentToBall = null;
     public ?Port $normalizedFromSelfToBall = null;
     public ?Port $normalizedFromOpponentToBall = null;
+    public ?Vector3Split $normalizedFromOpponentToBallSplit = null;
     public ?Port $dotProductBallToBase = null;
     public ?Port $isBallGoingTowardsMe = null;
     public ?Port $isBallGoingTowardsOpponent = null;
@@ -236,6 +237,7 @@ class SlimeHelper
         $this->distanceFromOpponentToBall = $this->math->getMagnitude($this->fromOpponentToBall);
         $this->normalizedFromSelfToBall = $this->math->getNormalizedVector3($this->fromSelfToBall);
         $this->normalizedFromOpponentToBall = $this->math->getNormalizedVector3($this->fromOpponentToBall);
+        $this->normalizedFromOpponentToBallSplit = $this->math->splitVector3($this->normalizedFromOpponentToBall);
         $this->normalizedFromBallToSelf = $this->math->getNormalizedVector3($this->fromBallToSelf);
         $this->normalizedFromBallToOpponent = $this->math->getNormalizedVector3($this->fromBallToOpponent);
         $this->normalizedFromBaseToEnemy = $this->math->getNormalizedVector3($this->fromBaseToEnemy);
@@ -735,10 +737,11 @@ class SlimeHelper
     public function getDesiredHit(
         Port $landingWhere,
         Port $landingWhen,
-        float $moveDistance,
-        float $jumpTimeLeft,
+        Port|float $moveDistance,
+        Port|float $jumpTimeLeft,
         Port $directionToStepBack,
-        Port|float $howFarToStepBack
+        Port|float $howFarToStepBack,
+        Port|float $moveTimeLeft = 0
     ): array {
         $howFarToStepBack = $this->getFloat($howFarToStepBack);
         $moveToTarget = $this->math->movePointAlongVector(
@@ -751,6 +754,20 @@ class SlimeHelper
 
         $isTimeToJump = $this->math->compareFloats(FloatOperator::LESS_THAN_OR_EQUAL, $landingWhen, $jumpTimeLeft);
         $shouldJump = $this->computer->getAndGate($isAlreadyThere, $isTimeToJump);
+        if ($moveTimeLeft > 0) {
+            $moveTimeLeft = $this->getAddValue($jumpTimeLeft, $moveTimeLeft);
+            $falseMoveToTarget = $this->math->movePointAlongVector(
+                $landingWhere,
+                $this->math->getInverseVector3($directionToStepBack),
+                $howFarToStepBack
+            );
+            $isTimeToMove = $this->math->compareFloats(FloatOperator::LESS_THAN_OR_EQUAL, $landingWhen, $moveTimeLeft);
+            $moveToTarget = $this->getConditionalVector3(
+                $isTimeToMove,
+                $moveToTarget,
+                $falseMoveToTarget
+            );
+        }
         return [
             'moveTo' => $moveToTarget,
             'shouldJump' => $shouldJump
@@ -1100,5 +1117,193 @@ class SlimeHelper
         $strikePosition = $this->math->movePointAlongVector($interceptPoint, $this->math->getInverseVector3($direction), $offsetDistance);
         $strikeSplit = $this->math->splitVector3($strikePosition);
         return $this->math->constructVector3($strikeSplit->getOutputX(), $this->getFloat(0.0), $strikeSplit->getOutputZ());
+    }
+
+    /**
+     * Predicts opponent's defensive vulnerability
+     * @return Port Vulnerability vector (x=coverage gap, z=depth weakness)
+     */
+    public function predictDefensiveVulnerability(): Port
+    {
+        // Calculate opponent's movement commitment
+        $commitment = $this->math->getScaleVector3(
+            $this->math->getNormalizedVector3($this->opponentVelocity),
+            $this->math->getMagnitude($this->opponentVelocity)
+        );
+
+        // Reaction time penalty (0.3 seconds)
+        $reactionTime = $this->getFloat(0.3);
+        $futureCommitment = $this->math->getScaleVector3($commitment, $reactionTime);
+
+        // Coverage gap in x-axis
+        $xVulnerability = $this->math->getAddValue(
+            $this->opponentPositionSplit->x,
+            $this->math->splitVector3($futureCommitment)->x
+        );
+
+        // Depth vulnerability (negative = too forward)
+        $zVulnerability = $this->math->getSubtractValue(
+            $this->opponentPositionSplit->z,
+            $this->getFloat(3.0) // Ideal defensive depth
+        );
+
+        return $this->math->constructVector3($xVulnerability, 0, $zVulnerability);
+    }
+
+    /**
+     * Calculates optimal attack target
+     * @return Port Best attack position
+     */
+    public function getOptimalAttackTarget(): Port
+    {
+        $vulnerability = $this->predictDefensiveVulnerability();
+        $vulnSplit = $this->math->splitVector3($vulnerability);
+
+        // Target the gap in coverage
+        $targetX = $this->math->getMultiplyValue(
+            $vulnSplit->x,
+            $this->getFloat(-1.5) // Amplify vulnerability
+        );
+
+        // Exploit depth weakess
+        $targetZ = $this->math->getClampedValue(
+            $this->math->getAddValue(
+                $this->getFloat(5.0), // Base depth
+                $this->math->getMultiplyValue($vulnSplit->z, $this->getFloat(0.8))
+            ),
+            $this->getFloat(3.0),
+            $this->getFloat(7.0)
+        );
+
+        return $this->math->constructVector3($targetX, 0, $targetZ);
+    }
+
+    /**
+     * Predicts optimal attack angle against opponent
+     */
+    public function getOptimalAttackVector(): Port
+    {
+        $opponentCoverage = $this->math->remapValue(
+            $this->getAbsValue($this->opponentPositionSplit->x),
+            $this->getFloat(self::STAGE_HALF_WIDTH),
+            $this->getFloat(0),
+            $this->getFloat(-1),
+            $this->getFloat(1)
+        );
+
+        $attackAngle = $this->math->getMultiplyValue(
+            $this->math->getAsinValue($opponentCoverage),
+            $this->getFloat(0.7)
+        );
+
+        $x = $this->math->getCosValue($attackAngle);
+        $z = $this->math->getSinValue($attackAngle);
+
+        $x = $this->getMultiplyValue($x, $this->baseSide);
+        $z = $this->getMultiplyValue($z, $this->baseSide);
+
+        return $this->math->constructVector3($x, 0, $z);
+    }
+
+    /**
+     * Finds the corner farthest from opponent for targeted attacks
+     * @return Port Vector3 position of optimal attack corner
+     */
+    public function getFarthestCornerFromOpponent(): Port
+    {
+        $margin = self::BALL_RADIUS; // Safety margin from boundaries
+        $halfWidth = $this->getFloat(self::STAGE_HALF_WIDTH - $margin);
+        $halfLength = $this->getFloat(self::STAGE_HALF_DEPTH - $margin);
+        $halfWidth = $this->getMultiplyValue($halfWidth, $this->baseSide);
+        $halfLength = $this->getMultiplyValue($halfLength, $this->baseSide);
+
+        // Define four attack target corners
+        $corners = [
+            'back_left'  => $this->math->constructVector3($halfWidth, 0, $halfLength),
+            'back_right' => $this->math->constructVector3($halfWidth, 0, $this->getInverseValue($halfLength)),
+            'front_left' => $this->math->constructVector3($margin, 0, $halfLength),
+            'front_right' => $this->math->constructVector3($margin, 0, $this->getInverseValue($halfLength))
+        ];
+
+        // Calculate distances to each corner
+        $distances = [];
+        foreach ($corners as $key => $corner) {
+            $distances[$key] = $this->math->getDistance($this->opponentPosition, $corner);
+        }
+
+        // Find maximum distance using pairwise comparisons
+        $back_compare = $this->getConditionalVector3(
+            $this->compareFloats(FloatOperator::GREATER_THAN, $distances['back_left'], $distances['back_right']),
+            $corners['back_left'],
+            $corners['back_right']
+        );
+        $back_dist = $this->getConditionalFloatV2(
+            $this->compareFloats(FloatOperator::GREATER_THAN, $distances['back_left'], $distances['back_right']),
+            $distances['back_left'],
+            $distances['back_right']
+        );
+
+        $front_compare = $this->getConditionalVector3(
+            $this->compareFloats(FloatOperator::GREATER_THAN, $distances['front_left'], $distances['front_right']),
+            $corners['front_left'],
+            $corners['front_right']
+        );
+        $front_dist = $this->getConditionalFloatV2(
+            $this->compareFloats(FloatOperator::GREATER_THAN, $distances['front_left'], $distances['front_right']),
+            $distances['front_left'],
+            $distances['front_right']
+        );
+
+        return $this->getConditionalVector3(
+            $this->compareFloats(FloatOperator::GREATER_THAN, $back_dist, $front_dist),
+            $back_compare,
+            $front_compare
+        );
+    }
+
+    /**
+     * Enhanced attack targeting using corner analysis
+     */
+    public function getStrategicAttackTarget(): Port
+    {
+        $farthestCorner = $this->getFarthestCornerFromOpponent();
+        $opponentSpeed = $this->math->getMagnitude($this->opponentVelocity);
+
+        // Adjust for opponent momentum
+        $momentumFactor = $this->math->remapValue(
+            $opponentSpeed,
+            $this->getFloat(0),
+            $this->getFloat(8),
+            $this->getFloat(0.7),
+            $this->getFloat(1.3)
+        );
+
+        return $this->math->constructVector3(
+            $this->math->getMultiplyValue(
+                $this->math->splitVector3($farthestCorner)->x,
+                $momentumFactor
+            ),
+            0,
+            $this->math->getMultiplyValue(
+                $this->math->splitVector3($farthestCorner)->z,
+                $momentumFactor
+            )
+        );
+    }
+
+    /**
+     * Predicts recovery time for opponent to reach a position
+     */
+    public function getRecoveryTime(Port $target): Port
+    {
+        $distance = $this->math->getDistance($this->opponentPosition, $target);
+        $opponentSpeed = $this->math->getMagnitude($this->opponentVelocity);
+
+        $effectiveSpeed = $this->math->getMaxValue(
+            $this->getFloat(STAT_SPEED * 0.8),
+            $opponentSpeed
+        );
+
+        return $this->math->getDivideValue($distance, $effectiveSpeed);
     }
 }

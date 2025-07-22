@@ -239,6 +239,18 @@ class MathHelper
         return $this->getAddValue($a, $interp);
     }
 
+    public function getLerpVector3Value(Port $a, Port $b, Port $t)
+    {
+        $a_split = $this->splitVector3($a);
+        $b_split = $this->splitVector3($b);
+
+        $x = $this->getLerpValue($a_split->getOutputX(), $b_split->getOutputX(), $t);
+        $y = $this->getLerpValue($a_split->getOutputY(), $b_split->getOutputY(), $t);
+        $z = $this->getLerpValue($a_split->getOutputZ(), $b_split->getOutputZ(), $t);
+
+        return $this->constructVector3($x, $y, $z);
+    }
+
     /**
      * Calculates the 2D distance between two points.
      * Formula: sqrt(dx² + dy²)
