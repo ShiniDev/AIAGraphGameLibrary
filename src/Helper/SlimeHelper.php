@@ -754,11 +754,16 @@ class SlimeHelper
 
         $isTimeToJump = $this->math->compareFloats(FloatOperator::LESS_THAN_OR_EQUAL, $landingWhen, $jumpTimeLeft);
         $shouldJump = $this->computer->getAndGate($isAlreadyThere, $isTimeToJump);
-        if ($moveTimeLeft > 0) {
+        if (is_float($moveTimeLeft) && $moveTimeLeft > 0) {
             $moveTimeLeft = $this->getAddValue($jumpTimeLeft, $moveTimeLeft);
             $falseMoveToTarget = $this->math->movePointAlongVector(
-                $landingWhere,
+                $moveToTarget,
                 $this->math->getInverseVector3($directionToStepBack),
+                // $directionToStepBack,
+                /* $this->getMultiplyValue(
+                    $howFarToStepBack,
+                    5
+                ) */
                 $howFarToStepBack
             );
             $isTimeToMove = $this->math->compareFloats(FloatOperator::LESS_THAN_OR_EQUAL, $landingWhen, $moveTimeLeft);
