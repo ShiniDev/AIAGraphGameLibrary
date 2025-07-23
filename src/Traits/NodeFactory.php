@@ -275,6 +275,11 @@ trait NodeFactory
         return $this->getMultiplyValue($valueOutput, -1);
     }
 
+    public function getNegative(float|Port $v)
+    {
+        return $this->getInverseValue($v);
+    }
+
     public function getConditionalFloat(Port $condition, float|Port $ifTrue, float|Port $ifFalse): Port
     {
         if (defined('SLIME')) {
