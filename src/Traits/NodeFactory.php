@@ -362,10 +362,13 @@ trait NodeFactory
             ->getOutput();
     }
 
-    public function getConditionalBool(Port $condition, Port $ifTrue, Port $ifFalse): Port
+    public function getConditionalBool(Port $condition, Port|bool $ifTrue, Port|bool $ifFalse): Port
     {
+        $ifTrue = is_bool($ifTrue) ? $this->getBool($ifTrue) : $ifTrue;
+        $ifFalse = is_bool($ifFalse) ? $this->getBool($ifFalse) : $ifFalse;
         // Get the inverse of the condition for the 'false' path
         $notCondition = $this->getInverseBool($condition);
+
 
         // Calculate the two possible paths
         $truePath = $this->compareBool(BooleanOperator::AND, $ifTrue, $condition);

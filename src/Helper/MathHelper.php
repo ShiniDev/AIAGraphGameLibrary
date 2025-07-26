@@ -324,6 +324,19 @@ class MathHelper
             ->getOutput();
     }
 
+    public function getVector3PowerValue(Port $vector, int $exp)
+    {
+        $vector = $this->splitVector3($vector);
+        $x = $this->getPowerValue($vector->x, $exp);
+        $y = $this->getPowerValue($vector->y, $exp);
+        $z =  $this->getPowerValue($vector->z, $exp);
+        return $this->constructVector3(
+            $x,
+            $y,
+            $z
+        );
+    }
+
     /**
      * Creates a node to normalize a Vector3, making its length 1.
      * @param Port $vector The vector to normalize.

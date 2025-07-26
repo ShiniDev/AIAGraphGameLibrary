@@ -111,8 +111,7 @@ class SlimeHelper
         ]
     ];
 
-    public const JUMP_VELOCITY_INCREASE_ONE_DIRECTION = .19;
-    public const JUMP_VELOCITY_INCREASE_BOTH_DIRECTION = .14;
+    public const JUMP_XZ_VELOCITY_INCREASE_PERCENTAGE = .02;
 
     // --- Ball Physics ---
     public const BALL_RADIUS = 0.3;
@@ -162,6 +161,7 @@ class SlimeHelper
     public ?Port $isBallOpponentSide = null;
     public ?Port $ballTouches = null;
     public ?Port $baseSide = null;
+    public ?Port $enemySide = null;
     public ?Port $isOpponentHasNoJump = null;
     public ?Port $isOpponentNearNet = null;
     public ?Port $isSelfNearNet = null;
@@ -261,6 +261,7 @@ class SlimeHelper
             )
         )->getOutputX();
         $this->baseSide = $this->math->getSignValue($this->baseSide);
+        $this->enemySide = $this->getInverseValue($this->baseSide);
 
         $this->isOpponentHasNoJump = $this->compareBool(
             BooleanOperator::NOT,
@@ -290,6 +291,20 @@ class SlimeHelper
         $this->effectivePositiveZ = $this->math->getSubtractValue($this->getFloat(self::STAGE_HALF_DEPTH), $this->ballRadius);
         $this->effectiveNegativeZ = $this->math->getInverseValue($this->effectivePositiveZ);
         $this->a_gravity = $this->math->getMultiplyValue(0.5, $this->gravity);
+    }
+
+    public function getJumpVelocity(int $jumpStat)
+    {
+        $jumpRange = self::JUMP_FORCE_MAX - self::JUMP_FORCE_MIN; // 12.0 - 6.0 = 6.0
+        $jumpVelocity = self::JUMP_FORCE_MIN + ($jumpStat / 10.0) * $jumpRange;
+        return $jumpVelocity;
+    }
+
+    public function getAcceleration(int $accStat)
+    {
+        $accRange = self::ACCELERATION_MAX - self::ACCELERATION_MIN;
+        $acc = self::ACCELERATION_MIN + ($accStat / 10.0) * $accRange;
+        return $acc;
     }
 
     /**
@@ -333,8 +348,9 @@ class SlimeHelper
      * @param Port $moveTo The Vector3 port representing the target position.
      * @param Port $shouldJump The boolean port that triggers a jump when true.
      */
-    public function controller(Port $moveTo, Port $shouldJump)
+    public function controller(Port $moveTo, Port|bool $shouldJump)
     {
+        $shouldJump = is_bool($shouldJump) ? $this->getBool($shouldJump) : $shouldJump;
         $slimeController = $this->createSlimeController();
         $slimeController->connectInputVector3($moveTo);
         $slimeController->connectInputBool($shouldJump);
@@ -1110,7 +1126,7 @@ class SlimeHelper
     public function getKineticStrikePosition(Port $interceptPoint, Port $launchVelocity): Port
     {
         $direction = $this->math->getNormalizedVector3($launchVelocity);
-        $offsetDistance = $this->math->getAddValue(self::SLIME_RADIUS, self::BALL_RADIUS);
+        $offsetDistance = $this->math->getSubtractValue(self::SLIME_RADIUS, self::BALL_RADIUS);
         $strikePosition = $this->math->movePointAlongVector($interceptPoint, $this->math->getInverseVector3($direction), $offsetDistance);
         $strikeSplit = $this->math->splitVector3($strikePosition);
         return $this->math->constructVector3($strikeSplit->getOutputX(), $this->getFloat(0.0), $strikeSplit->getOutputZ());
@@ -1263,7 +1279,7 @@ class SlimeHelper
      */
     public function getStrategicAttackTarget(): Port
     {
-        $farthestCorner = $this->getFarthestCornerFromOpponent();
+        $farthestCorner = $this->getFarthestCornerFromTarget($this->opponentPosition);
         $opponentSpeed = $this->math->getMagnitude($this->opponentVelocity);
 
         // Adjust for opponent momentum
@@ -1354,8 +1370,9 @@ class SlimeHelper
         ];
     }
 
-    public function getBallLandingVerticalVelocity(Port $ballPos, Port $ballVel, Port $yTarget): Port
+    public function getBallLandingVerticalVelocity(Port $ballPos, Port $ballVel, Port|float $yTarget): Port
     {
+        $yTarget = $this->getFloat($yTarget);
         $g = abs(self::GRAVITY);
         $y0 = $ballPos;      // Current ball height
         $v0y = $ballVel;     // Current vertical velocity
@@ -1376,5 +1393,65 @@ class SlimeHelper
         $verticalVelocity = $this->getInverseValue($this->math->getSqrtValue(($this->getMaxValue($yTarget, $finalV))));
 
         return $verticalVelocity;
+    }
+
+    public function getLaunchVelocity(Port $target, Port $impact, Port|float $desiredTime)
+    {
+        $desiredTime = $this->getFloat($desiredTime);
+        $launch = $this->math->getSubtractVector3($target, $impact);
+        $launch = $this->math->splitVector3($launch);
+        $v_x = $this->getDivideValue(
+            $launch->x,
+            $desiredTime
+        );
+        $v_z = $this->getDivideValue(
+            $launch->z,
+            $desiredTime
+        );
+        // Corrected v_y calculation:
+        $term1 = $this->getDivideValue($launch->y, $desiredTime); // Δy / t
+        $term2 = $this->getMultiplyValue(0.5, $this->getMultiplyValue(self::GRAVITY, $desiredTime)); // (1/2)*g*t
+        $v_y = $this->getSubtractValue($term1, $term2); // v_y0 = (Δy/t) - (1/2)*g*t
+
+        return $this->math->constructVector3(
+            $v_x,
+            $v_y,
+            $v_z
+        );
+    }
+
+    // Solves the distance needed to produce the exact velocity needed
+    public function getRunUpDistance(Port $finalVelocity, float $acceleration)
+    {
+        $finalVelocity = $this->math->modifyVector3Y($finalVelocity, 0);
+        return $this->getDivideValue(
+            $this->math->getSquareValue($this->math->getMagnitude($finalVelocity)),
+            $this->getMultiplyValue(2, $acceleration)
+        );
+    }
+
+    public function getJumpTimeToVelocity(Port $yDesired, float $jumpVelocity)
+    {
+        return $this->getDivideValue(
+            $this->getSubtractValue($yDesired, $jumpVelocity),
+            self::GRAVITY
+        );
+    }
+
+    public function controlSlimeSpeed(Port $maxSpeed, Port $moveTo)
+    {
+        $maxSpeed = $this->math->modifyVector3Y($maxSpeed, 0);
+        $maxSpeed = $this->math->getMagnitude($maxSpeed);
+        $currentSpeed = $this->math->modifyVector3Y($this->selfVelocity, 0);
+        $currentSpeed = $this->math->getMagnitude($currentSpeed);
+        return $this->getConditionalVector3(
+            $this->compareFloats(
+                FloatOperator::LESS_THAN,
+                $currentSpeed,
+                $maxSpeed
+            ),
+            $moveTo,
+            $this->selfPosition
+        );
     }
 }
