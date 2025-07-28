@@ -175,11 +175,13 @@ trait SlimeFactory
     public function getConditionalVector3(Port $condition, Port $ifTrue, Port $ifFalse): Port
     {
         // This helper assumes the V2 node which takes three inputs.
-        $node = $this->createConditionalSetVector3(); // Assuming V2 is default or aliased
-        $node->connectCondition($condition);
-        $node->connectInputVector3_1($ifTrue);
-        $node->connectInputVector3_2($ifFalse);
-        return $node->getOutput();
+        return $this->getOrCache($this->keyMaker("condvec3", $condition, $ifTrue, $ifFalse), function () use ($condition, $ifTrue, $ifFalse) {
+            $node = $this->createConditionalSetVector3(); // Assuming V2 is default or aliased
+            $node->connectCondition($condition);
+            $node->connectInputVector3_1($ifTrue);
+            $node->connectInputVector3_2($ifFalse);
+            return $node->getOutput();
+        });
     }
 
     // --- Existing Helper Methods ---
@@ -207,13 +209,14 @@ trait SlimeFactory
     {
         $ifTruePort = is_float($ifTrue) ? $this->getFloat($ifTrue) : $ifTrue;
         $ifFalsePort = is_float($ifFalse) ? $this->getFloat($ifFalse) : $ifFalse;
+        return $this->getOrCache($this->keyMaker("condfloatv2", $condition, $ifTruePort, $ifFalsePort), function () use ($condition, $ifTruePort, $ifFalsePort) {
+            $node = $this->createConditionalSetFloatV2();
+            $node->connectCondition($condition);
+            $node->connectInputFloat1($ifTruePort);
+            $node->connectInputFloat2($ifFalsePort);
 
-        $node = $this->createConditionalSetFloatV2();
-        $node->connectCondition($condition);
-        $node->connectInputFloat1($ifTruePort);
-        $node->connectInputFloat2($ifFalsePort);
-
-        return $node->getOutput();
+            return $node->getOutput();
+        });
     }
 
     public function getConditionalRandomSign(Port $condition): Port

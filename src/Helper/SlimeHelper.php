@@ -117,7 +117,7 @@ class SlimeHelper
     public const BALL_RADIUS = 0.3;
     public const BALL_MASS = 0.25;
     public const BALL_DRAG = 0.0;
-    public const BALL_RESTITUTION = 0.565;
+    public const BALL_RESTITUTION = 0.6;
     public const BALL_FRICTION = 0.0;
 
     // --- Self Properties ---
@@ -389,6 +389,8 @@ class SlimeHelper
         return $this->getConditionalFloat($zeroBound, 999, $time);
     }
 
+
+
     /**
      * Simulates the 2D (top-down) trajectory of the ball, including wall bounces.
      *
@@ -441,6 +443,7 @@ class SlimeHelper
 
         return ['x' => $posX, 'z' => $posZ];
     }
+
 
     /**
      * Predicts the 3D landing position of the ball.
@@ -767,7 +770,7 @@ class SlimeHelper
         $endRunTarget = $this->math->movePointAlongVector(
             $moveToTarget,
             $this->math->getInverseVector3($directionToStepBack),
-            .65
+            1
         );
         // $moveTimeLeft = $this->getAddValue($moveTimeLeft, $jumpTimeLeft);
         $isTimeToMove = $this->math->compareFloats(FloatOperator::LESS_THAN_OR_EQUAL, $landingWhen, $whenToRun);
@@ -1160,7 +1163,7 @@ class SlimeHelper
             $this->getFloat(3.0) // Ideal defensive depth
         );
 
-        return $this->math->constructVector3($xVulnerability, 0, $zVulnerability);
+        return $this->math->constructVector3($zVulnerability, 0, $xVulnerability);
     }
 
     /**
@@ -1181,14 +1184,14 @@ class SlimeHelper
         // Exploit depth weakess
         $targetZ = $this->math->getClampedValue(
             $this->math->getAddValue(
-                $this->getFloat(5.0), // Base depth
+                $this->getFloat(0), // Base depth
                 $this->math->getMultiplyValue($vulnSplit->z, $this->getFloat(0.8))
             ),
-            $this->getFloat(3.0),
-            $this->getFloat(7.0)
+            $this->getFloat(-3.4),
+            $this->getFloat(3.4)
         );
 
-        return $this->math->constructVector3($targetX, 0, $targetZ);
+        return $this->math->constructVector3($targetZ, 0, $targetX);
     }
 
     /**
@@ -1219,6 +1222,22 @@ class SlimeHelper
     }
 
     /**
+     * Checks if two float ports are almost equal within a small tolerance (epsilon).
+     * This is crucial for avoiding floating-point imprecision errors.
+     *
+     * @param Port $a The first float port.
+     * @param Port $b The second float port.
+     * @param float $epsilon The tolerance.
+     * @return Port A boolean port that is true if they are almost equal.
+     */
+    public function isAlmostEqual(Port $a, Port $b, float $epsilon = 0.0000001): Port
+    {
+        $difference = $this->math->getSubtractValue($a, $b);
+        $absoluteDifference = $this->getAbsValue($difference);
+        return $this->compareFloats(FloatOperator::LESS_THAN, $absoluteDifference, $epsilon);
+    }
+
+    /**
      * Finds the corner farthest from opponent for targeted attacks
      * @return Port Vector3 position of optimal attack corner
      */
@@ -1245,6 +1264,80 @@ class SlimeHelper
         }
 
         // Find maximum distance using pairwise comparisons
+        $back_compare = $this->getConditionalVector3(
+            $this->compareFloats(FloatOperator::GREATER_THAN, $distances['back_left'], $distances['back_right']),
+            $corners['back_left'],
+            $corners['back_right']
+        );
+        $back_dist = $this->getConditionalFloatV2(
+            $this->compareFloats(FloatOperator::GREATER_THAN, $distances['back_left'], $distances['back_right']),
+            $distances['back_left'],
+            $distances['back_right']
+        );
+
+        $front_compare = $this->getConditionalVector3(
+            $this->compareFloats(FloatOperator::GREATER_THAN, $distances['front_left'], $distances['front_right']),
+            $corners['front_left'],
+            $corners['front_right']
+        );
+        $front_dist = $this->getConditionalFloatV2(
+            $this->compareFloats(FloatOperator::GREATER_THAN, $distances['front_left'], $distances['front_right']),
+            $distances['front_left'],
+            $distances['front_right']
+        );
+
+        return $this->getConditionalVector3(
+            $this->compareFloats(FloatOperator::GREATER_THAN, $back_dist, $front_dist),
+            $back_compare,
+            $front_compare
+        );
+    }
+
+    /**
+     * Finds the corner farthest from a target that is NOT blocked by the opponent.
+     * A shot is considered "blocked" if the opponent is between the shot's origin and the target corner.
+     *
+     * @param Port $target The entity to maximize distance from (usually the opponent).
+     * @param Port $shotOrigin The starting position of the shot (e.g., the ball intercept point).
+     * @return Port Vector3 position of the optimal, unblocked attack corner.
+     */
+    public function getFarthestSafeCornerFromTarget(Port $target, Port $shotOrigin): Port
+    {
+        $enemySide = $this->math->getSignValue($this->opponentPositionSplit->x);
+        $margin = self::BALL_RADIUS;
+        $halfWidth = $this->getFloat(self::STAGE_HALF_WIDTH - $margin);
+        $halfLength = $this->getFloat(self::STAGE_HALF_DEPTH - $margin);
+        $halfWidth = $this->getMultiplyValue($halfWidth, $enemySide);
+
+        // Define four attack target corners
+        $corners = [
+            'back_left'   => $this->math->constructVector3($halfWidth, 0, $halfLength),
+            'back_right'  => $this->math->constructVector3($halfWidth, 0, $this->getInverseValue($halfLength)),
+            'front_left'  => $this->math->constructVector3($this->getMultiplyValue(1.5, $enemySide), 0, $halfLength),
+            'front_right' => $this->math->constructVector3($this->getMultiplyValue(1.5, $enemySide), 0, $this->getInverseValue($halfLength))
+        ];
+
+        // --- Check each corner for safety and distance ---
+        $distances = [];
+        $opponentPos = $this->opponentPosition;
+
+        foreach ($corners as $key => $corner) {
+            // 1. Check if the shot path to this corner is blocked by the opponent.
+            $vecToOrigin = $this->math->getSubtractVector3($shotOrigin, $opponentPos);
+            $vecToCorner = $this->math->getSubtractVector3($corner, $opponentPos);
+            $dotProduct = $this->math->getDotProduct($vecToOrigin, $vecToCorner);
+            $isSafe = $this->compareFloats(FloatOperator::GREATER_THAN_OR_EQUAL, $dotProduct, 0);
+
+            // 2. Calculate the distance from the target to the corner.
+            $distance = $this->math->getDistance($target, $corner);
+
+            // 3. If the corner is NOT safe, set its distance to 0 so it won't be chosen.
+            $distances[$key] = $this->getConditionalFloat($isSafe, $distance, 0.0);
+        }
+
+        // --- Find the Farthest SAFE Corner (existing logic) ---
+        // This logic remains the same. It will now naturally discard unsafe corners
+        // because their distances have been zeroed out.
         $back_compare = $this->getConditionalVector3(
             $this->compareFloats(FloatOperator::GREATER_THAN, $distances['back_left'], $distances['back_right']),
             $corners['back_left'],
@@ -1320,52 +1413,62 @@ class SlimeHelper
         return $this->math->getDivideValue($distance, $effectiveSpeed);
     }
 
-    public function getQuickLandingPosition(Port|float $threshold = self::BALL_RADIUS): array
+    public function getQuickLandingPositionWithBounces(Port|float $threshold = self::BALL_RADIUS): array
     {
-        // Convert inputs to ports if needed
-        $g = is_float(self::GRAVITY) ? $this->getFloat(self::GRAVITY) : self::GRAVITY;
+        // --- Part 1: Original Trajectory Calculation ---
+        // This part is the same as before. It calculates the time to landing and
+        // the naive landing spot as if there were no walls.
+        $g = $this->getFloat(self::GRAVITY);
         $py = $this->ballPositionSplit->getOutputY();
         $vy = $this->ballVelocitySplit->getOutputY();
         $px = $this->ballPositionSplit->getOutputX();
         $pz = $this->ballPositionSplit->getOutputZ();
         $vx = $this->ballVelocitySplit->getOutputX();
         $vz = $this->ballVelocitySplit->getOutputZ();
-
-        $thresholdPort = is_float($threshold) ? $this->getFloat($threshold) : $threshold;
-
-        // Simplify constants calculation
-        $halfG = $this->math->getMultiplyValue(0.5, $g);
+        $thresholdPort = $this->getFloat($threshold);
+        $halfG = $this->getMultiplyValue(0.5, $g);
         $pyMinusThreshold = $this->math->getSubtractValue($py, $thresholdPort);
-
-        // Calculate discriminant components
         $vySquared = $this->math->getSquareValue($vy);
-        $gPyDiff = $this->math->getMultiplyValue($g, $pyMinusThreshold);
-        $discriminantInner = $this->math->getSubtractValue($vySquared, $gPyDiff);
+        $discriminantInner = $this->math->getSubtractValue($vySquared, $this->math->getMultiplyValue($g, $pyMinusThreshold));
         $discriminantInner = $this->math->getMaxValue(0.0, $discriminantInner);
-
-        // Optimized square root using your V2 math helper
         $sqrtDisc = $this->math->getSqrtValue($discriminantInner);
-
-        // Compute time using physics-optimized formula
-        $numerator = $this->math->getSubtractValue(
-            $this->math->getInverseValue($vy),
-            $sqrtDisc
-        );
+        $numerator = $this->math->getSubtractValue($this->math->getInverseValue($vy), $sqrtDisc);
         $time = $this->math->getDivideValue($numerator, $halfG);
 
-        // Calculate landing position
-        $landingX = $this->math->getAddValue(
-            $px,
-            $this->math->getMultiplyValue($vx, $time)
-        );
-        $landingY = $thresholdPort;  // Ground level position
-        $landingZ = $this->math->getAddValue(
-            $pz,
-            $this->math->getMultiplyValue($vz, $time)
-        );
+        $naiveX = $this->math->getAddValue($px, $this->math->getMultiplyValue($vx, $time));
+        $naiveZ = $this->math->getAddValue($pz, $this->math->getMultiplyValue($vz, $time));
+        $landingY = $thresholdPort;
 
+        // --- Part 2: New Bounce Reflection Logic ---
+        $restitution = self::BALL_RESTITUTION;
+        $wallX = self::STAGE_HALF_WIDTH - self::BALL_RADIUS;
+        $wallZ = self::STAGE_HALF_DEPTH - self::BALL_RADIUS;
+
+        // -- Reflect X Coordinate --
+        // Check positive wall
+        $overshootXPos = $this->math->getSubtractValue($naiveX, $wallX);
+        $reflectedXPos = $this->math->getSubtractValue($wallX, $this->math->getMultiplyValue($overshootXPos, $restitution));
+        $finalX = $this->getConditionalFloat($this->compareFloats(FloatOperator::GREATER_THAN, $naiveX, $wallX), $reflectedXPos, $naiveX);
+
+        // Check negative wall
+        $overshootXNeg = $this->math->getSubtractValue($finalX, -$wallX);
+        $reflectedXNeg = $this->math->getSubtractValue(-$wallX, $this->math->getMultiplyValue($overshootXNeg, $restitution));
+        $finalX = $this->getConditionalFloat($this->compareFloats(FloatOperator::LESS_THAN, $finalX, -$wallX), $reflectedXNeg, $finalX);
+
+        // -- Reflect Z Coordinate --
+        // Check positive wall
+        $overshootZPos = $this->math->getSubtractValue($naiveZ, $wallZ);
+        $reflectedZPos = $this->math->getSubtractValue($wallZ, $this->math->getMultiplyValue($overshootZPos, $restitution));
+        $finalZ = $this->getConditionalFloat($this->compareFloats(FloatOperator::GREATER_THAN, $naiveZ, $wallZ), $reflectedZPos, $naiveZ);
+
+        // Check negative wall
+        $overshootZNeg = $this->math->getSubtractValue($finalZ, -$wallZ);
+        $reflectedZNeg = $this->math->getSubtractValue(-$wallZ, $this->math->getMultiplyValue($overshootZNeg, $restitution));
+        $finalZ = $this->getConditionalFloat($this->compareFloats(FloatOperator::LESS_THAN, $finalZ, -$wallZ), $reflectedZNeg, $finalZ);
+
+        // --- Part 3: Return Final Position ---
         return [
-            'position' => $this->math->constructVector3($landingX, $landingY, $landingZ),
+            'position' => $this->math->constructVector3($finalX, $landingY, $finalZ),
             'time' => $time
         ];
     }
@@ -1420,14 +1523,101 @@ class SlimeHelper
         );
     }
 
-    // Solves the distance needed to produce the exact velocity needed
-    public function getRunUpDistance(Port $finalVelocity, float $acceleration)
+    /**
+     * Calculates the minimum distance required to reach a given maximum velocity from a standstill.
+     *
+     * This uses the kinematic formula d = v² / (2a) to determine the length of the
+     * "runway" a slime needs to achieve its top speed.
+     *
+     * @param Port|float $maxVelocity The target maximum velocity.
+     * @param Port|float $acceleration The slime's constant acceleration.
+     * @return Port A float port representing the required distance.
+     */
+    public function getDistanceToMaxVelocity(Port|float $maxVelocity, Port|float $acceleration): Port
     {
-        $finalVelocity = $this->math->modifyVector3Y($finalVelocity, 0);
-        return $this->getDivideValue(
-            $this->math->getSquareValue($this->math->getMagnitude($finalVelocity)),
-            $this->getMultiplyValue(2, $acceleration)
-        );
+        // Ensure inputs are graph ports
+        $maxVelPort = is_float($maxVelocity) ? $this->getFloat($maxVelocity) : $maxVelocity;
+        $accelPort = is_float($acceleration) ? $this->getFloat($acceleration) : $acceleration;
+
+        // Calculate the numerator: maxVelocity²
+        $numerator = $this->math->getSquareValue($maxVelPort);
+
+        // Calculate the denominator: 2 * acceleration
+        $denominator = $this->math->getMultiplyValue(2.0, $accelPort);
+
+        // Final calculation
+        return $this->getDivideValue($numerator, $denominator);
+    }
+
+    /**
+     * Calculates the time required to reach a given maximum velocity from a standstill.
+     *
+     * This uses the formula t = v / a.
+     *
+     * @param Port|float $maxVelocity The target maximum velocity.
+     * @param Port|float $acceleration The slime's constant acceleration.
+     * @return Port A float port representing the required time.
+     */
+    public function getTimeToMaxVelocity(Port|float $maxVelocity, Port|float $acceleration): Port
+    {
+        // Ensure inputs are graph ports
+        $maxVelPort = is_float($maxVelocity) ? $this->getFloat($maxVelocity) : $maxVelocity;
+        $accelPort = is_float($acceleration) ? $this->getFloat($acceleration) : $acceleration;
+
+        // Final calculation: time = velocity / acceleration
+        return $this->getDivideValue($maxVelPort, $accelPort);
+    }
+
+    /**
+     * Calculates the time to reach max CARDINAL (straight) speed.
+     *
+     * @param int $speedStat The slime's speed stat (0-10).
+     * @param Port|float $acceleration The slime's acceleration.
+     * @return Port A float port representing the required time.
+     */
+    public function getTimeToMaxCardinalSpeed(int $speedStat, Port|float $acceleration): Port
+    {
+        $maxVelocity = self::VELOCITY_MAP[$speedStat]['one_direction'];
+        return $this->getTimeToMaxVelocity($maxVelocity, $acceleration);
+    }
+
+    /**
+     * Calculates the time to reach max DIAGONAL speed.
+     *
+     * @param int $speedStat The slime's speed stat (0-10).
+     * @param Port|float $acceleration The slime's acceleration.
+     * @return Port A float port representing the required time.
+     */
+    public function getTimeToMaxDiagonalSpeed(int $speedStat, Port|float $acceleration): Port
+    {
+        $maxVelocity = self::VELOCITY_MAP[$speedStat]['both_directions'];
+        return $this->getTimeToMaxVelocity($maxVelocity, $acceleration);
+    }
+
+    /**
+     * Calculates the minimum distance to reach max CARDINAL (straight) speed.
+     *
+     * @param int $speedStat The slime's speed stat (0-10).
+     * @param Port|float $acceleration The slime's acceleration.
+     * @return Port A float port representing the required distance.
+     */
+    public function getDistanceToMaxCardinalSpeed(int $speedStat, Port|float $acceleration): Port
+    {
+        $maxVelocity = self::VELOCITY_MAP[$speedStat]['one_direction'];
+        return $this->getDistanceToMaxVelocity($maxVelocity, $acceleration);
+    }
+
+    /**
+     * Calculates the minimum distance to reach max DIAGONAL speed.
+     *
+     * @param int $speedStat The slime's speed stat (0-10).
+     * @param Port|float $acceleration The slime's acceleration.
+     * @return Port A float port representing the required distance.
+     */
+    public function getDistanceToMaxDiagonalSpeed(int $speedStat, Port|float $acceleration): Port
+    {
+        $maxVelocity = self::VELOCITY_MAP[$speedStat]['both_directions'];
+        return $this->getDistanceToMaxVelocity($maxVelocity, $acceleration);
     }
 
     public function getJumpTimeToVelocity(Port $yDesired, float $jumpVelocity, float $spacer = .5)
@@ -1537,6 +1727,43 @@ class SlimeHelper
             'moveTo' => $slimeImpactPosition,
             'shouldJump' => $shouldJump,
         ];
+    }
+    /**
+     * Calculates the time it takes for a jumping slime to reach a specific height.
+     *
+     * This function solves the kinematic equation to find the time required to travel
+     * from the ground to a target Y-position, given an initial jump velocity
+     * determined by the slime's jump stat. It returns the shortest positive time.
+     *
+     * @param Port $targetY The target Y-position (height) to reach.
+     * @param int $jumpStat The slime's jump stat (0-10), which determines its launch velocity.
+     * @return Port A float port representing the time to reach the target height.
+     */
+    public function getJumpTimeToHeight(Port $targetY, int $jumpStat): Port
+    {
+        // 1. Get the initial vertical velocity from the jump stat as a plain float.
+        $initialJumpVelocityValue = $this->getJumpVelocity($jumpStat);
+        // Convert it into a graph Port to use in calculations.
+        $v0 = $this->getFloat($initialJumpVelocityValue);
+
+        // 2. Set up the coefficients for the quadratic equation based on the formula:
+        // y = v₀t + ½gt²  =>  (½g)t² + (v₀)t - y = 0
+        // The constant `a_gravity` is pre-calculated in the constructor as 0.5 * GRAVITY.
+        $a = $this->a_gravity;
+        $b = $v0;
+        $c = $this->math->getInverseValue($targetY); // This represents the '-y' term.
+
+        // 3. Solve the quadratic equation for time 't'.
+        // This returns two possible solutions (roots).
+        $roots = $this->math->getQuadraticFormula($a, $b, $c);
+
+        // 4. Select the correct time.
+        // For a reachable height, there are two positive times: reaching the height
+        // on the way up (smaller time) and on the way down (larger time). We want the first one.
+        $timeToHeight = $this->math->getMinValue($roots['root_pos'], $roots['root_neg']);
+
+        // 5. Ensure the result is not negative, in case the height is unreachable.
+        return $this->math->getMaxValue($timeToHeight, 0.0);
     }
 
     public function getOptimalTimeToY(Port|float $y)

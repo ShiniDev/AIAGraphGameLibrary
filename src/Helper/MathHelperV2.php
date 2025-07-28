@@ -26,9 +26,11 @@ class MathHelperV2 extends MathHelper
     private function getOperationResult(OperationModifier $modifier, float|Port $value): Port
     {
         $valuePort = is_float($value) ? $this->getFloat($value) : $value;
-        $operationNode = $this->createOperation($modifier);
-        $operationNode->connectInput($valuePort);
-        return $operationNode->getOutput();
+        return $this->getOrCache($this->keyMaker("ops_" . $modifier->value, $valuePort), function () use ($valuePort, $modifier) {
+            $operationNode = $this->createOperation($modifier);
+            $operationNode->connectInput($valuePort);
+            return $operationNode->getOutput();
+        });
     }
 
     public function getModuloValue(float|Port $a, float|Port $b)
@@ -59,7 +61,11 @@ class MathHelperV2 extends MathHelper
      */
     public function getSqrtValue(float|Port $value): Port
     {
-        return $this->getOperationResult(OperationModifier::SQRT, $value);
+        $value = $this->normalizeInputToPort($value);
+        $key = "sqrt_{$value->sID}";
+        return $this->getOrCache($key, function () use ($value) {
+            return $this->getOperationResult(OperationModifier::SQRT, $value);
+        });
     }
 
     /**

@@ -61,14 +61,16 @@ class MathHelper
 
         $basePort = is_float($base) ? $this->getFloat($base) : $base;
 
-        // Base case: x^2
-        $result = $this->getMultiplyValue($basePort, $basePort);
+        return $this->getOrCache($this->keyMaker("power{$exponent}", $basePort), function () use ($basePort, $exponent) {
+            // Base case: x^2
+            $result = $this->getMultiplyValue($basePort, $basePort);
 
-        for ($i = 3; $i <= $exponent; $i++) {
-            $result = $this->getMultiplyValue($result, $basePort);
-        }
+            for ($i = 3; $i <= $exponent; $i++) {
+                $result = $this->getMultiplyValue($result, $basePort);
+            }
 
-        return $result;
+            return $result;
+        });
     }
 
 
@@ -284,10 +286,12 @@ class MathHelper
      */
     public function getAddVector3(Port $a, Port $b): Port
     {
-        return $this->createAddVector3()
-            ->connectInputA($a)
-            ->connectInputB($b)
-            ->getOutput();
+        return $this->getOrCache($this->keyMaker("addvec3", $a, $b), function () use ($a, $b) {
+            return $this->createAddVector3()
+                ->connectInputA($a)
+                ->connectInputB($b)
+                ->getOutput();
+        });
     }
 
     /**
@@ -298,10 +302,12 @@ class MathHelper
      */
     public function getSubtractVector3(Port $a, Port $b): Port
     {
-        return $this->createSubtractVector3()
-            ->connectInputA($a)
-            ->connectInputB($b)
-            ->getOutput();
+        return $this->getOrCache($this->keyMaker("subvec3", $a, $b), function () use ($a, $b) {
+            return $this->createSubtractVector3()
+                ->connectInputA($a)
+                ->connectInputB($b)
+                ->getOutput();
+        });
     }
 
     /**
@@ -315,13 +321,14 @@ class MathHelper
     {
         // Handle the case where the scalar is a raw float, not a Port.
         $scalarPort = is_float($scalar) ? $this->getFloat($scalar) : $scalar;
-
+        return $this->getOrCache($this->keyMaker("scalev3", $vector, $scalarPort), function () use ($scalarPort, $vector) {
+            return $this->createScaleVector3()
+                ->connectVector($vector)
+                ->connectScale($scalarPort)
+                ->getOutput();
+        });
         // Assuming the ScaleVector3 node has connectInput() for the vector and connectScale() for the float.
         // We may need to adjust these names based on the actual ScaleVector3 class definition.
-        return $this->createScaleVector3()
-            ->connectVector($vector)
-            ->connectScale($scalarPort)
-            ->getOutput();
     }
 
     public function getVector3PowerValue(Port $vector, int $exp)
@@ -344,9 +351,11 @@ class MathHelper
      */
     public function getNormalizedVector3(Port $vector): Port
     {
-        return $this->createNormalize()
-            ->connectInput($vector)
-            ->getOutput();
+        return $this->getOrCache($this->keyMaker("normzvec3", $vector), function () use ($vector) {
+            return $this->createNormalize()
+                ->connectInput($vector)
+                ->getOutput();
+        });
     }
 
     /**
@@ -369,10 +378,12 @@ class MathHelper
      */
     public function getDistance(Port $a, Port $b): Port
     {
-        return $this->createDistance()
-            ->connectInputA($a)
-            ->connectInputB($b)
-            ->getOutput();
+        return $this->getOrCache($this->keyMaker("distance", $a, $b), function () use ($a, $b) {
+            return $this->createDistance()
+                ->connectInputA($a)
+                ->connectInputB($b)
+                ->getOutput();
+        });
     }
 
     /**
@@ -383,9 +394,12 @@ class MathHelper
      */
     public function splitVector3(Port $vector): Vector3Split
     {
-        $splitNode = $this->createVector3Split();
-        $splitNode->connectInput($vector);
-        return $splitNode;
+        $key = "splitVector3_{$vector->sID}";
+        return $this->getOrCache($key, function () use ($vector) {
+            $splitNode = $this->createVector3Split();
+            $splitNode->connectInput($vector);
+            return $splitNode;
+        });
     }
 
     /**
@@ -401,12 +415,13 @@ class MathHelper
         $xPort = is_float($x) ? $this->getFloat($x) : $x;
         $yPort = is_float($y) ? $this->getFloat($y) : $y;
         $zPort = is_float($z) ? $this->getFloat($z) : $z;
-
-        return $this->createConstructVector3()
-            ->connectX($xPort)
-            ->connectY($yPort)
-            ->connectZ($zPort)
-            ->getOutput();
+        return $this->getOrCache($this->keyMaker("vector3", $xPort, $yPort, $zPort), function () use ($xPort, $yPort, $zPort) {
+            return $this->createConstructVector3()
+                ->connectX($xPort)
+                ->connectY($yPort)
+                ->connectZ($zPort)
+                ->getOutput();
+        });
     }
 
     /**

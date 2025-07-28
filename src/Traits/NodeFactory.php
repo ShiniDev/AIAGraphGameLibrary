@@ -61,6 +61,36 @@ trait NodeFactory
      * The key is the float value as a string, and the value is the NodeFloat instance.
      */
     protected array $floatNodes = [];
+    protected array $operationCache = [];
+
+    private function keyMaker(string $name, Port ...$ports)
+    {
+        foreach ($ports as $port) {
+            $name .= "_" . $port->sID;
+        }
+        return $name;
+    }
+    /**
+     * Retrieves an item from the cache or creates it if it doesn't exist.
+     *
+     * @param string $key The unique key for the cache entry.
+     * @param callable $creator A function that creates the value if it's not in the cache.
+     * @return Port|Vector3Split The cached or newly created Port object.
+     */
+    private function getOrCache(string $key, callable $creator): Port|Vector3Split
+    {
+        // 1. Check if the key exists in the cache.
+        if (isset($this->operationCache[$key]) && defined('CACHING')) {
+            return $this->operationCache[$key];
+        }
+
+        // 2. If not, call the creator function to generate the new value.
+        $output = $creator();
+
+        // 3. Store the new value in the cache and return it.
+        $this->operationCache[$key] = $output;
+        return $output;
+    }
 
     public function createAbsFloat(): AbsFloat
     {
@@ -195,16 +225,56 @@ trait NodeFactory
         return new Vector3Split($this->graph);
     }
 
-    // Moved other basic node functionalities here to be easily used by helpers.
+    /**
+     * Ensures the input is a Port object, converting primitive types as needed.
+     *
+     * @param float|bool|Port $input The value to normalize.
+     * @return Port
+     */
+    public function normalizeInputToPort(float|bool|Port $input): Port
+    {
+        if ($input instanceof Port) {
+            return $input;
+        }
+
+        if (is_float($input)) {
+            // This now calls the cached getter method
+            return $this->getFloat($input);
+        }
+
+        // Acknowledge other data types like bool
+        if (is_bool($input)) {
+            // This also calls its own cached getter method
+            return $this->getBool($input);
+        }
+
+        // In PHP 8+ with type hints, an error would be thrown for other types.
+        // For defensive programming, you could add an exception here.
+        throw new \InvalidArgumentException("Unsupported input type for normalization.");
+    }
+
     public function getAddValue(float|Port $portTop, float|Port $portBottom): Port
     {
         $portTopPort = is_float($portTop) ? $this->getFloat($portTop) : $portTop;
         $portBottomPort = is_float($portBottom) ? $this->getFloat($portBottom) : $portBottom;
 
+        $ids = [$portTopPort->sID, $portBottomPort->sID];
+        sort($ids);
+        $key = "add_{$ids[0]}_{$ids[1]}";
+
+        if (isset($this->operationCache[$key]) && defined('CACHING')) {
+            return $this->operationCache[$key];
+        }
+
         $addFloats = $this->createAddFloats();
         $addFloats->connectInputA($portTopPort);
         $addFloats->connectInputB($portBottomPort);
-        return $addFloats->getOutput();
+        $outputPort = $addFloats->getOutput();
+
+        // 4. Store the new result in the cache before returning it.
+        $this->operationCache[$key] = $outputPort;
+
+        return $outputPort;
     }
 
     public function getSubtractValue(float|Port $portTop, float|Port $portBottom): Port
@@ -212,10 +282,22 @@ trait NodeFactory
         $portTopPort = is_float($portTop) ? $this->getFloat($portTop) : $portTop;
         $portBottomPort = is_float($portBottom) ? $this->getFloat($portBottom) : $portBottom;
 
+        $ids = [$portTopPort->sID, $portBottomPort->sID];
+        // sort($ids);
+        $key = "sub_{$ids[0]}_{$ids[1]}";
+
+        if (isset($this->operationCache[$key]) && defined('CACHING')) {
+            return $this->operationCache[$key];
+        }
+
         $subtractFloats = $this->createSubtractFloats();
         $subtractFloats->connectInputA($portTopPort);
         $subtractFloats->connectInputB($portBottomPort);
-        return $subtractFloats->getOutput();
+
+        $outputPort = $subtractFloats->getOutput();
+        $this->operationCache[$key] = $outputPort;
+
+        return $outputPort;
     }
 
     public function getMultiplyValue(float|Port $portTop, float|Port $portBottom): Port
@@ -223,10 +305,21 @@ trait NodeFactory
         $portTopPort = is_float($portTop) ? $this->getFloat($portTop) : $portTop;
         $portBottomPort = is_float($portBottom) ? $this->getFloat($portBottom) : $portBottom;
 
+        $ids = [$portTopPort->sID, $portBottomPort->sID];
+        sort($ids);
+        $key = "mul_{$ids[0]}_{$ids[1]}";
+
+        if (isset($this->operationCache[$key]) && defined('CACHING')) {
+            return $this->operationCache[$key];
+        }
+
         $multiplyFloats = $this->createMultiplyFloats();
         $multiplyFloats->connectInputA($portTopPort);
         $multiplyFloats->connectInputB($portBottomPort);
-        return $multiplyFloats->getOutput();
+        $output = $multiplyFloats->getOutput();
+
+        $this->operationCache[$key] = $output;
+        return $output;
     }
 
     public function getDivideValue(float|Port $portTop, float|Port $portBottom): Port
@@ -234,10 +327,21 @@ trait NodeFactory
         $portTopPort = is_float($portTop) ? $this->getFloat($portTop) : $portTop;
         $portBottomPort = is_float($portBottom) ? $this->getFloat($portBottom) : $portBottom;
 
+        $ids = [$portTopPort->sID, $portBottomPort->sID];
+        // sort($ids);
+        $key = "div_{$ids[0]}_{$ids[1]}";
+
+        if (isset($this->operationCache[$key]) && defined('CACHING')) {
+            return $this->operationCache[$key];
+        }
+
+
         $divideFloats = $this->createDivideFloats();
         $divideFloats->connectInputA($portTopPort);
         $divideFloats->connectInputB($portBottomPort);
-        return $divideFloats->getOutput();
+        $outputPort = $divideFloats->getOutput();
+        $this->operationCache[$key] = $outputPort;
+        return $outputPort;
     }
 
     public function getFloat(float|Port $float)
@@ -251,23 +355,40 @@ trait NodeFactory
 
     public function getBool(bool $b)
     {
-        return $this->createBool($b)->getOutput();
+        $key = "bool" . $b;
+        if (isset($this->operationCache[$key]) && defined('CACHING')) {
+            return $this->operationCache[$key];
+        }
+        $output = $this->createBool($b)->getOutput();
+        $this->operationCache[$key] = $output;
+        return $output;
     }
 
     public function getInverseBool(Port $boolOutput): Port
     {
+        $key = "inverseBool_{$boolOutput->sID}";
+        if (isset($this->operationCache[$key]) && defined('CACHING')) {
+            return $this->operationCache[$key];
+        }
         $inverse = $this->createNot();
         $inverse->connectInput($boolOutput);
-        return $inverse->getOutput();
+        $output = $inverse->getOutput();
+        $this->operationCache[$key] = $output;
+        return $output;
     }
 
     public function getAbsValue(float|Port $value): Port
     {
         $valuePort = is_float($value) ? $this->getFloat($value) : $value;
-
+        $key = "abs_{$valuePort->sID}";
+        if (isset($this->operationCache[$key]) && defined('CACHING')) {
+            return $this->operationCache[$key];
+        }
         $abs = $this->createAbsFloat();
         $abs->connectInput($valuePort);
-        return $abs->getOutput();
+        $outputPort = $abs->getOutput();
+        $this->operationCache[$key] = $outputPort;
+        return $outputPort;
     }
 
     public function getInverseValue(float|Port $valueOutput): Port
@@ -282,20 +403,28 @@ trait NodeFactory
 
     public function getConditionalFloat(Port $condition, float|Port $ifTrue, float|Port $ifFalse): Port
     {
-        if (defined('SLIME')) {
-            $ifTruePort = is_float($ifTrue) ? $this->getFloat($ifTrue) : $ifTrue;
-            $ifFalsePort = is_float($ifFalse) ? $this->getFloat($ifFalse) : $ifFalse;
+        $ifTruePort = is_float($ifTrue) ? $this->getFloat($ifTrue) : $ifTrue;
+        $ifFalsePort = is_float($ifFalse) ? $this->getFloat($ifFalse) : $ifFalse;
 
+        $key = "condfloat_{$condition->sID}_{$ifTruePort->sID}_{$ifFalsePort->sID}";
+        if (isset($this->operationCache[$key]) && defined('CACHING')) {
+            return $this->operationCache[$key];
+        }
+        if (defined('SLIME')) {
             $node = new ConditionalSetFloatV2($this->graph);
             $node->connectCondition($condition);
             $node->connectInputFloat1($ifTruePort);
             $node->connectInputFloat2($ifFalsePort);
-
-            return $node->getOutput();
+            $outputPort = $node->getOutput();
+            $this->operationCache[$key] = $outputPort;
+            return $outputPort;
+        } else {
+            $truePortion = $this->setCondFloat(true, $condition, $ifTruePort);
+            $falsePortion = $this->setCondFloat(false, $condition, $ifFalsePort);
+            $outputPort = $this->getAddValue($truePortion, $falsePortion);
+            $this->operationCache[$key] = $outputPort;
+            return $outputPort;
         }
-        $truePortion = $this->setCondFloat(true, $condition, $ifTrue);
-        $falsePortion = $this->setCondFloat(false, $condition, $ifFalse);
-        return $this->getAddValue($truePortion, $falsePortion);
     }
 
     public function getMinValue(float|Port $floatA, float|Port $floatB): Port
@@ -316,11 +445,18 @@ trait NodeFactory
         $maxPort = is_float($max) ? $this->getFloat($max) : $max;
         $valuePort = is_float($value) ? $this->getFloat($value) : $value;
 
+        $key = "clamp_{$minPort->sID}_{$maxPort->sID}_{$valuePort->sID}";
+        if (isset($this->operationCache[$key]) && defined('CACHING')) {
+            return $this->operationCache[$key];
+        }
+
         $clamp = $this->createClampFloat();
         $clamp->connectMin($minPort);
         $clamp->connectMax($maxPort);
         $clamp->connectValue($valuePort);
-        return $clamp->getOutput();
+        $output = $clamp->getOutput();
+        $this->operationCache[$key] = $output;
+        return $output;
     }
 
     public function compareBool(BooleanOperator $op, Port $boolA, ?Port $boolB = null)
@@ -334,10 +470,18 @@ trait NodeFactory
         if ($op == BooleanOperator::NOT) {
             return $this->getInverseBool($boolA);
         }
-        return $this->createCompareBool($op)
+
+        $key = "compBool_{$op->value}_{$boolA->sID}_{$boolB->sID}";
+        if (isset($this->operationCache[$key]) && defined('CACHING')) {
+            return $this->operationCache[$key];
+        }
+
+        $output = $this->createCompareBool($op)
             ->connectInputA($boolA)
             ->connectInputB($boolB)
             ->getOutput();
+        $this->operationCache[$key] = $output;
+        return $output;
     }
 
     public function compareFloats(FloatOperator $op, float|Port $floatA, float|Port $floatB)
@@ -345,10 +489,16 @@ trait NodeFactory
         $floatAPort = is_float($floatA) ? $this->getFloat($floatA) : $floatA;
         $floatBPort = is_float($floatB) ? $this->getFloat($floatB) : $floatB;
 
-        return $this->createCompareFloats($op)
+        $key = "compFloats_{$op->value}_{$floatAPort->sID}_{$floatBPort->sID}";
+        if (isset($this->operationCache[$key]) && defined('CACHING')) {
+            return $this->operationCache[$key];
+        }
+        $output = $this->createCompareFloats($op)
             ->connectInputA($floatAPort)
             ->connectInputB($floatBPort)
             ->getOutput();
+        $this->operationCache[$key] = $output;
+        return $output;
     }
 
     public function setCondFloat(bool $cond, Port $condition, float|Port $float)
@@ -356,10 +506,16 @@ trait NodeFactory
         $floatPort = is_float($float) ? $this->getFloat($float) : $float;
 
         $condBranch = $cond ? ConditionalBranch::TRUE : ConditionalBranch::FALSE;
-        return $this->createConditionalSetFloat($condBranch)
+        $key = "setCond_{$condBranch->value}_{$condition->sID}_{$floatPort->sID}";
+        if (isset($this->operationCache[$key]) && defined('CACHING')) {
+            return $this->operationCache[$key];
+        }
+        $output = $this->createConditionalSetFloat($condBranch)
             ->connectCondition($condition)
             ->connectFloat($floatPort)
             ->getOutput();
+        $this->operationCache[$key] = $output;
+        return $output;
     }
 
     public function getConditionalBool(Port $condition, Port|bool $ifTrue, Port|bool $ifFalse): Port
