@@ -1430,8 +1430,9 @@ class SlimeHelper
         );
     }
 
-    public function getJumpTimeToVelocity(Port $yDesired, float $jumpVelocity)
+    public function getJumpTimeToVelocity(Port $yDesired, float $jumpVelocity, float $spacer = .5)
     {
+        $jumpVelocity += $spacer;
         return $this->getDivideValue(
             $this->getSubtractValue($yDesired, $jumpVelocity),
             self::GRAVITY
@@ -1452,6 +1453,105 @@ class SlimeHelper
             ),
             $moveTo,
             $this->selfPosition
+        );
+    }
+
+    public function calculateShotAndMovement(
+        Port $targetPosition,
+        Port $landingPosition,
+        Port $timeToLanding,
+        int $jumpStat,
+        float $shotDuration = 0.7
+    ): array {
+        // For this logic, we assume the interception happens at the ball's landing spot.
+        // NOTE: A more advanced version would calculate an interception point in the air.
+        // 1. Calculate the required launch velocity to get the ball to the target.
+        $requiredLaunchVelocity = $this->getLaunchVelocity(
+            $targetPosition,
+            $landingPosition,
+            $shotDuration
+        );
+
+        // 2. Calculate the velocity change the slime must impart on the ball.
+        // This uses the ball's velocity at the moment of impact.
+        $hitVelocity = $this->math->getSubtractVector3(
+            $requiredLaunchVelocity,
+            $this->ballVelocity
+        );
+
+        // 3. Determine where the slime needs to be to perform the hit.
+        // This is offset from the ball's center based on the hit direction.
+        $hitDirection = $this->math->getNormalizedVector3($hitVelocity);
+        $slimeImpactPosition = $this->math->getSubtractVector3(
+            $landingPosition,
+            $this->math->getScaleVector3(
+                $hitDirection,
+                self::SLIME_RADIUS + self::BALL_RADIUS
+            )
+        );
+
+        // 4. Plan the jump.
+        $verticalHitVelocity = $this->math->splitVector3($hitVelocity)->y;
+        $hasVerticalHit = $this->compareFloats(FloatOperator::GREATER_THAN, $verticalHitVelocity, 0);
+        $verticalHitVelocity = $this->getMinValue($this->getJumpVelocity($jumpStat), $verticalHitVelocity);
+        $airTimeNeeded = $this->getConditionalFloatV2(
+            $hasVerticalHit,
+            $this->getJumpTimeToVelocity($verticalHitVelocity, $this->getJumpVelocity($jumpStat)),
+            0
+        );
+        $canMakeJump = $this->getConditionalBool(
+            $this->compareFloats(
+                FloatOperator::GREATER_THAN,
+                $airTimeNeeded,
+                0
+            ),
+            true,
+            false
+        );
+
+        // 5. Make the jump decision.
+        $shouldJump = false;
+        $distanceToImpact = $this->math->getDistance($this->selfPosition, $slimeImpactPosition);
+
+        $closeToJump = $this->computer->getAndGate(
+            $this->compareFloats(FloatOperator::LESS_THAN, $distanceToImpact, 1),
+            $canMakeJump
+        );
+
+        $shouldJump = $this->getConditionalBool(
+            $closeToJump,
+            $this->getConditionalBool(
+                $this->compareFloats(
+                    FloatOperator::LESS_THAN_OR_EQUAL,
+                    $timeToLanding,
+                    $this->getAddValue($airTimeNeeded, .05)
+                ),
+                true,
+                false
+            ),
+            false
+        );
+
+        // 6. Return the final action plan.
+        return [
+            'moveTo' => $slimeImpactPosition,
+            'shouldJump' => $shouldJump,
+        ];
+    }
+
+    public function getOptimalTimeToY(Port|float $y)
+    {
+        return $this->math->getSqrtValue(
+            $this->getDivideValue(
+                $this->getMultiplyValue(
+                    2,
+                    $this->getSubtractValue(
+                        0,
+                        $y
+                    )
+                ),
+                self::GRAVITY
+            )
         );
     }
 }

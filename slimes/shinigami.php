@@ -466,31 +466,6 @@ class Shinigami extends SlimeHelper
         $this->shouldJump = $shouldJump;
     }
 
-    public function getDesiredHit(
-        Port $landingWhere,
-        Port $landingWhen,
-        float $moveDistance,
-        float $jumpTimeLeft,
-        Port $directionToStepBack,
-        Port|float $howFarToStepBack
-    ): array {
-        $howFarToStepBack = $this->getFloat($howFarToStepBack);
-        $moveToTarget = $this->math->movePointAlongVector(
-            $landingWhere,
-            $directionToStepBack,
-            $howFarToStepBack
-        );
-        $distanceToTarget = $this->math->getDistance($this->selfPosition, $moveToTarget);
-        $isAlreadyThere = $this->math->compareFloats(FloatOperator::LESS_THAN, $distanceToTarget, $moveDistance);
-
-        $isTimeToJump = $this->math->compareFloats(FloatOperator::LESS_THAN, $landingWhen, $jumpTimeLeft);
-        $shouldJump = $this->computer->getAndGate($isAlreadyThere, $isTimeToJump);
-        return [
-            'moveTo' => $moveToTarget,
-            'shouldJump' => $shouldJump
-        ];
-    }
-
     public function getTimeToBallApex(Port $velocityY)
     {
         return $this->getDivideValue(
