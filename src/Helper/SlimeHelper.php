@@ -3,6 +3,7 @@
 namespace GraphLib\Helper;
 
 use Exception;
+use GraphLib\Components\SpikeConfig;
 use GraphLib\Enums\BooleanOperator;
 use GraphLib\Enums\FloatOperator;
 use GraphLib\Enums\GetSlimeVector3Modifier;
@@ -389,6 +390,132 @@ class SlimeHelper
         return $this->getConditionalFloat($zeroBound, 999, $time);
     }
 
+    /**
+     * Predicts an object's height at a future time, considering gravity.
+     * @private
+     */
+    public function _predictHeightAtTime(Port $time, Port $initialY, Port $velocityY): Port
+    {
+        // term1 = v_y0 * t
+        $term1 = $this->math->getMultiplyValue($velocityY, $time);
+
+        // term2 = 0.5 * g * t^2
+        $timeSquared = $this->math->getSquareValue($time);
+        $term2 = $this->math->getMultiplyValue($this->a_gravity, $timeSquared);
+
+        // final_y = y0 + term1 + term2
+        return $this->math->getAddValue($initialY, $this->math->getAddValue($term1, $term2));
+    }
+
+    /**
+     * Calculates the time until the ball collides with the top of the net.
+     * Returns a very large number if no collision is predicted.
+     * @private
+     */
+    public function _timeToNet(Port $posX, Port $posY, Port $velX, Port $velY): Port
+    {
+        // Define net's physical properties
+        $netTopY = $this->getFloat(self::NET_HEIGHT + self::BALL_RADIUS);
+        $netHalfThickness = $this->getFloat(0.1); // Based on thickness of 0.2
+
+        // --- Part 1: When will the ball be at the net's height? ---
+        // Solve y(t) = netTopY using the quadratic formula: (0.5g)t² + (v_y0)t + (y0 - netTopY) = 0
+        $a = $this->a_gravity;
+        $b = $velY;
+        $c = $this->math->getSubtractValue($posY, $netTopY);
+        $roots = $this->math->getQuadraticFormula($a, $b, $c);
+
+        // We only care about future collisions, so find the smallest positive time.
+        // A simple way is to check if root_neg is positive, otherwise use root_pos.
+        $isNegRootValid = $this->compareFloats(FloatOperator::GREATER_THAN, $roots['root_neg'], 0.01);
+        $timeToNetHeight = $this->getConditionalFloat($isNegRootValid, $roots['root_neg'], $roots['root_pos']);
+
+        // --- Part 2: Where will the ball be horizontally at that time? ---
+        $xAtNetHeight = $this->math->getAddValue($posX, $this->math->getMultiplyValue($velX, $timeToNetHeight));
+
+        // --- Part 3: Is this a valid collision? ---
+        // Condition A: Is the time positive (i.e., in the future)?
+        $isTimeValid = $this->compareFloats(FloatOperator::GREATER_THAN, $timeToNetHeight, 0.01);
+        // Condition B: Is the ball's x-position within the net's thickness?
+        $isXValid = $this->compareFloats(FloatOperator::LESS_THAN_OR_EQUAL, $this->getAbsValue($xAtNetHeight), $netHalfThickness);
+
+        // A valid net bounce must satisfy both conditions.
+        $isNetBounceValid = $this->computer->getAndGate($isTimeValid, $isXValid);
+
+        // Return the calculated time if valid, otherwise return 999 so it's ignored.
+        return $this->getConditionalFloat($isNetBounceValid, $timeToNetHeight, 999.0);
+    }
+
+    /**
+     * Simulates the 2D trajectory of the ball, including wall bounces above a minimum height.
+     * It's a simplified model that ignores gravity and the net for horizontal movement.
+     *
+     * @param Port $timeRemaining The duration over which to simulate.
+     * @param Port $posX The initial X position of the ball.
+     * @param Port $posZ The initial Z position of the ball.
+     * @param Port $posY The initial Y position of the ball.
+     * @param Port $velX The initial X velocity of the ball.
+     * @param Port $velZ The initial Z velocity of the ball.
+     * @param Port $velY The initial Y velocity of the ball.
+     * @param int $iterationN The number of bounces to simulate.
+     * @return array An array containing the final 'x' and 'z' position ports.
+     */
+    public function simulateBounce(Port $timeRemaining, Port $posX, Port $posZ, Port $posY, Port $velX, Port $velZ, Port $velY, int $iterationN): array
+    {
+        $effectivePositiveX = $this->effectivePositiveX;
+        $effectiveNegativeX = $this->effectiveNegativeX;
+        $effectivePositiveZ = $this->effectivePositiveZ;
+        $effectiveNegativeZ = $this->effectiveNegativeZ;
+        $lostForce = self::BALL_RESTITUTION;
+        $minBounceHeight = $this->getFloat(0.6); // The minimum height for a valid bounce
+
+        for ($i = 0; $i < $iterationN; $i++) {
+
+            // --- Calculate potential bounce times ---
+            $timeX_raw = $this->timeToWall($posX, $velX, $effectiveNegativeX, $effectivePositiveX);
+            $timeZ_raw = $this->timeToWall($posZ, $velZ, $effectiveNegativeZ, $effectivePositiveZ);
+
+            // --- NEW: Check if the ball is high enough to bounce ---
+            // Predict height at the moment of each potential bounce
+            $yAtBounceX = $this->_predictHeightAtTime($timeX_raw, $posY, $velY);
+            $yAtBounceZ = $this->_predictHeightAtTime($timeZ_raw, $posY, $velY);
+
+            // Check if the predicted heights are above our threshold
+            $isBounceXValid = $this->compareFloats(FloatOperator::GREATER_THAN_OR_EQUAL, $yAtBounceX, $minBounceHeight);
+            $isBounceZValid = $this->compareFloats(FloatOperator::GREATER_THAN_OR_EQUAL, $yAtBounceZ, $minBounceHeight);
+
+            // If a bounce is not valid, set its time to a very large number to ignore it
+            $timeX = $this->getConditionalFloat($isBounceXValid, $timeX_raw, 999.0);
+            $timeZ = $this->getConditionalFloat($isBounceZValid, $timeZ_raw, 999.0);
+
+            // --- The rest of the logic proceeds as normal ---
+            $timeNext = $this->getMinValue($timeX, $timeZ);
+            $timeNext = $this->getMinValue($timeNext, $timeRemaining);
+
+            // Advance position and time for this step
+            $posX = $this->getAddValue($posX, $this->getMultiplyValue($velX, $timeNext));
+            $posZ = $this->getAddValue($posZ, $this->getMultiplyValue($velZ, $timeNext));
+            $posY = $this->_predictHeightAtTime($timeNext, $posY, $velY); // Also update Y position
+            $timeRemaining = $this->getSubtractValue($timeRemaining, $timeNext);
+
+            // Update velocities ONLY if a valid bounce occurred
+            $velX = $this->getConditionalFloat(
+                $this->compareFloats(FloatOperator::EQUAL_TO, $timeX, $timeNext),
+                $this->getMultiplyValue($velX, -$lostForce),
+                $velX
+            );
+            $velZ = $this->getConditionalFloat(
+                $this->compareFloats(FloatOperator::EQUAL_TO, $timeZ, $timeNext),
+                $this->getMultiplyValue($velZ, -$lostForce),
+                $velZ
+            );
+            // Also update Y velocity for this step
+            $velY = $this->getAddValue($velY, $this->getMultiplyValue($this->gravity, $timeNext));
+        }
+
+        return ['x' => $posX, 'z' => $posZ];
+    }
+
 
 
     /**
@@ -406,7 +533,7 @@ class SlimeHelper
      * @param int $iterationN The number of bounces to simulate.
      * @return array An array containing the final 'x' and 'z' position ports.
      */
-    public function simulateBounce(Port $timeRemaining, Port $posX, Port $posZ, Port $velX, Port $velZ, int $iterationN)
+    public function oldsimulateBounce(Port $timeRemaining, Port $posX, Port $posZ, Port $posY, Port $velX, Port $velZ, Port $velY, int $iterationN)
     {
         $ballRadius = self::BALL_RADIUS;
         $stageHalfWidth = self::STAGE_HALF_WIDTH;
@@ -480,7 +607,7 @@ class SlimeHelper
 
         // Call the updated simulation with the full 3D state
         // $bounce = $this->simulateBounceV3($roots['root_neg'], $posX, $posY, $posZ, $velX, $velY, $velZ, $n);
-        $bounce = $this->simulateBounce($roots['root_neg'], $posX, $posZ, $velX, $velZ, $n);
+        $bounce = $this->oldsimulateBounce($roots['root_neg'], $posX, $posZ, $posY, $velX, $velZ, $velY, $n);
 
         $land = $this->math->constructVector3($bounce['x'], $targetY, $bounce['z']);
         return [
@@ -663,6 +790,62 @@ class SlimeHelper
     }
 
     /**
+     * Calculates the position and jump timing for a running spike.
+     *
+     * @param Port $landingWhere The predicted landing position of the ball.
+     * @param Port $landingWhen The predicted time until the ball lands.
+     * @param Port $directionToStepBack The vector direction to step back.
+     * @param SpikeConfig $config An object containing all spike parameters as Ports.
+     * @return array An array containing the 'moveTo' Vector3 and 'shouldJump' boolean ports.
+     */
+    public function getDesiredRunningSpike(
+        Port $landingWhere,
+        Port $landingWhen,
+        Port $directionToStepBack,
+        SpikeConfig $config
+    ): array {
+        // No more type-checking needed here! Everything is already a Port.
+
+        $jumpPosition = $this->math->movePointAlongVector(
+            $landingWhere,
+            $directionToStepBack,
+            $config->stepBackDistance
+        );
+
+        $runUpPosition = $this->math->movePointAlongVector(
+            $jumpPosition,
+            $directionToStepBack,
+            $this->getMultiplyValue($config->stepBackDistance, $config->runUpDistanceFactor)
+        );
+
+        $strikePosition = $this->math->movePointAlongVector(
+            $jumpPosition,
+            $this->math->getInverseVector3($directionToStepBack),
+            $config->strikeDistance
+        );
+
+        $isTimeForFinalRun = $this->math->compareFloats(FloatOperator::LESS_THAN_OR_EQUAL, $landingWhen, $config->runUpStartTime);
+
+        $moveToTarget = $this->getConditionalVector3(
+            $isTimeForFinalRun,
+            $strikePosition,
+            $runUpPosition
+        );
+
+        $shouldJump = $this->calculateJumpCondition(
+            $jumpPosition,
+            $landingWhen,
+            $config->moveDistance,
+            $config->jumpTimeLeft
+        );
+
+        return [
+            'moveTo'     => $moveToTarget,
+            'shouldJump' => $shouldJump
+        ];
+    }
+
+    /**
      * Calculates the desired position and jump timing for a hit.
      *
      * This is a flexible method for defining an attack. It determines where to
@@ -723,6 +906,27 @@ class SlimeHelper
     }
 
     /**
+     * Calculates the jump condition based on proximity and timing.
+     * @private
+     */
+    public function calculateJumpCondition(
+        Port $targetPosition,
+        Port $landingWhen,
+        Port|float $moveDistance,
+        Port|float $jumpTimeLeft
+    ): Port {
+        // Condition A: Are we in position?
+        $distanceToTarget = $this->math->getDistance($this->selfPosition, $targetPosition);
+        $isAlreadyThere = $this->math->compareFloats(FloatOperator::LESS_THAN, $distanceToTarget, $moveDistance);
+
+        // Condition B: Is it time to jump?
+        $isTimeToJump = $this->math->compareFloats(FloatOperator::LESS_THAN_OR_EQUAL, $landingWhen, $jumpTimeLeft);
+
+        // The final jump command is only true if both conditions are met.
+        return $this->computer->getAndGate($isAlreadyThere, $isTimeToJump);
+    }
+
+    /**
      * Calculates the desired position and jump timing for a hit.
      *
      * This is a flexible method for defining an attack. It determines where to
@@ -755,10 +959,8 @@ class SlimeHelper
         );
         $distanceToTarget = $this->math->getDistance($this->selfPosition, $moveToTarget);
         $isAlreadyThere = $this->math->compareFloats(FloatOperator::LESS_THAN, $distanceToTarget, $moveDistance);
-
         $isTimeToJump = $this->math->compareFloats(FloatOperator::LESS_THAN_OR_EQUAL, $landingWhen, $jumpTimeLeft);
         $shouldJump = $this->computer->getAndGate($isAlreadyThere, $isTimeToJump);
-        // if (is_float($whenToRun) && $whenToRun > 0) {
         $runMoveToTarget = $this->math->movePointAlongVector(
             $moveToTarget,
             $directionToStepBack,
@@ -772,16 +974,12 @@ class SlimeHelper
             $this->math->getInverseVector3($directionToStepBack),
             1
         );
-        // $moveTimeLeft = $this->getAddValue($moveTimeLeft, $jumpTimeLeft);
         $isTimeToMove = $this->math->compareFloats(FloatOperator::LESS_THAN_OR_EQUAL, $landingWhen, $whenToRun);
         $moveToTarget = $this->getConditionalVector3(
             $isTimeToMove,
-            // $landingWhere,
             $endRunTarget,
-            // $moveToTarget,
             $runMoveToTarget
         );
-        // }
         return [
             'moveTo' => $moveToTarget,
             'shouldJump' => $shouldJump

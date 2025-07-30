@@ -221,9 +221,10 @@ trait SlimeFactory
 
     public function getConditionalRandomSign(Port $condition): Port
     {
+        $computer = new ComputerHelper($this->graph);
         $randomFloat = $this->getRandomFloat(0.0, 1.0);
         $isNewSignPositive = $this->compareFloats(FloatOperator::GREATER_THAN_OR_EQUAL, $randomFloat, 0.5);
-        $memoryRegister = $this->computer->createRegister(1, $condition);
+        $memoryRegister = $computer->createRegister(1, $condition);
         $isNewSignPositive->connectTo($memoryRegister->dataInputs[0]);
         $stableBoolSign = $memoryRegister->dataOutputs[0];
         return $this->getConditionalFloat($stableBoolSign, 1.0, -1.0);
