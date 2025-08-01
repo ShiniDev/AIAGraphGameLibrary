@@ -369,4 +369,165 @@ class Graph implements \JsonSerializable
             'file' => $versionedFile
         ];
     }
+
+    /**
+     * Removes all nodes that do not contribute to a set of specified root nodes.
+     *
+     * @param string[] $rootNodeIds An array of node IDs to be considered the essential outputs of the graph.
+     */
+    public function pruneUnusedNodes(array $rootNodeIds): void
+    {
+        if (empty($rootNodeIds)) {
+            return;
+        }
+
+        // Pre-build a fast lookup map for connections
+        $inputPortToSourceNode = [];
+        foreach ($this->serializableConnections as $connection) {
+            $sourceNode = $this->findNodeByPortSID($connection->port0SID);
+            if ($sourceNode) {
+                $inputPortToSourceNode[$connection->port1SID] = $sourceNode;
+            }
+        }
+
+        // Identify initial root nodes
+        $usedNodeSIDs = [];
+        $traversalQueue = new \SplQueue();
+        foreach ($this->serializableNodes as $node) {
+            if (in_array($node->id, $rootNodeIds, true)) {
+                if (!isset($usedNodeSIDs[$node->sID])) {
+                    $usedNodeSIDs[$node->sID] = true;
+                    $traversalQueue->enqueue($node);
+                }
+            }
+        }
+
+        // Perform the backward traversal using the fast lookup map
+        while (!$traversalQueue->isEmpty()) {
+            /** @var Node $currentNode */
+            $currentNode = $traversalQueue->dequeue();
+
+            foreach ($currentNode->serializablePorts as $portIn) {
+                if ($portIn->polarity === Port::INPUT) {
+                    if (isset($inputPortToSourceNode[$portIn->sID])) {
+                        $sourceNode = $inputPortToSourceNode[$portIn->sID];
+                        if (!isset($usedNodeSIDs[$sourceNode->sID])) {
+                            $usedNodeSIDs[$sourceNode->sID] = true;
+                            $traversalQueue->enqueue($sourceNode);
+                        }
+                    }
+                }
+            }
+        }
+
+        // --- THE FIX: Use array_values() to re-index the arrays ---
+
+        // Filter nodes and then re-index the array keys to be sequential.
+        $this->serializableNodes = array_values(array_filter(
+            $this->serializableNodes,
+            fn(Node $node) => isset($usedNodeSIDs[$node->sID])
+        ));
+
+        // Do the same for the connections.
+        $this->serializableConnections = array_values(array_filter(
+            $this->serializableConnections,
+            function (Connection $conn) use ($usedNodeSIDs) {
+                $sourceNode = $this->findNodeByPortSID($conn->port0SID);
+                $destNode = $this->findNodeByPortSID($conn->port1SID);
+                return $sourceNode && $destNode && isset($usedNodeSIDs[$sourceNode->sID]) && isset($usedNodeSIDs[$destNode->sID]);
+            }
+        ));
+
+        // Rebuild the internal registries for consistency
+        $this->nodeRegistry = [];
+        $this->nodeIdRegistry = [];
+        $this->portRegistry = [];
+        foreach ($this->serializableNodes as $node) {
+            $this->nodeRegistry[$node->sID] = $node;
+            $this->nodeIdRegistry[$node->id] = $node;
+            foreach ($node->serializablePorts as $port) {
+                $this->portRegistry[$port->sID] = $port;
+            }
+        }
+    }
+    /**
+     * A diagnostic version of pruneUnusedNodes to debug traversal issues.
+     *
+     * @param string[] $rootNodeIds An array of node IDs to be considered the essential outputs of the graph.
+     */
+    public function debugPruneUnusedNodes(array $rootNodeIds): void
+    {
+        echo "--- Starting Pruning Diagnosis ---\n";
+        echo "Total nodes in graph before pruning: " . count($this->serializableNodes) . "\n";
+        echo "Root Node IDs to find: " . implode(', ', $rootNodeIds) . "\n\n";
+
+        if (empty($rootNodeIds)) {
+            echo "ERROR: No root node IDs were provided. Aborting.\n";
+            return;
+        }
+
+        $inputPortToSourceNode = [];
+        foreach ($this->serializableConnections as $connection) {
+            $sourceNode = $this->findNodeByPortSID($connection->port0SID);
+            if ($sourceNode) {
+                $inputPortToSourceNode[$connection->port1SID] = $sourceNode;
+            }
+        }
+
+        $usedNodeSIDs = [];
+        $traversalQueue = new \SplQueue();
+        $rootsFound = 0;
+
+        foreach ($this->serializableNodes as $node) {
+            if (in_array($node->id, $rootNodeIds, true)) {
+                if (!isset($usedNodeSIDs[$node->sID])) {
+                    echo "SUCCESS: Found root node with ID '{$node->id}' (sID: {$node->sID})\n";
+                    $usedNodeSIDs[$node->sID] = true;
+                    $traversalQueue->enqueue($node);
+                    $rootsFound++;
+                }
+            }
+        }
+
+        if ($rootsFound === 0) {
+            echo "\nCRITICAL ERROR: No root nodes were found matching the provided IDs. The traversal cannot start.\n";
+            echo "Please check for typos or mismatches in your rootNodeIds array.\n";
+            echo "--- Diagnosis Finished ---\n";
+            return;
+        }
+
+        echo "\nStarting backward traversal...\n";
+        while (!$traversalQueue->isEmpty()) {
+            /** @var Node $currentNode */
+            $currentNode = $traversalQueue->dequeue();
+            echo "  Processing dependencies for node '{$currentNode->id}' (sID: {$currentNode->sID})\n";
+
+            foreach ($currentNode->serializablePorts as $portIn) {
+                if ($portIn->polarity === Port::INPUT) {
+                    if (isset($inputPortToSourceNode[$portIn->sID])) {
+                        $sourceNode = $inputPortToSourceNode[$portIn->sID];
+                        if (!isset($usedNodeSIDs[$sourceNode->sID])) {
+                            echo "    > Found dependency: '{$sourceNode->id}' (sID: {$sourceNode->sID}). Adding to queue.\n";
+                            $usedNodeSIDs[$sourceNode->sID] = true;
+                            $traversalQueue->enqueue($sourceNode);
+                        }
+                    }
+                }
+            }
+        }
+
+        $finalNodeCount = count($usedNodeSIDs);
+        echo "\nTraversal complete.\n";
+        echo "--- Pruning Summary ---\n";
+        echo "Total nodes to keep: {$finalNodeCount}\n";
+        echo "Total nodes to be pruned: " . (count($this->serializableNodes) - $finalNodeCount) . "\n";
+        echo "--- Diagnosis Finished ---\n";
+
+        // You can comment out the actual pruning part while debugging
+        /*
+    $this->serializableNodes = array_filter(...);
+    $this->serializableConnections = array_filter(...);
+    $this->nodeRegistry = []; // etc.
+    */
+    }
 }

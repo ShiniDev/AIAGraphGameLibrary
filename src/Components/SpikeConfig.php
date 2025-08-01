@@ -12,6 +12,7 @@ use GraphLib\Helper\SlimeHelper;
  */
 class SpikeConfig
 {
+    public Port $direction;
     /** @var Port The distance threshold to be considered "in position" for the jump. */
     public ?Port $moveDistance = null;
 
@@ -32,13 +33,15 @@ class SpikeConfig
 
     public function __construct(
         SlimeHelper $slimeHelper,
+        Port $direction,
         Port|float $moveDistance = 0,
         Port|float $jumpTimeLeft = 0,
         Port|float $stepBackDistance = 0,
         Port|float $runUpStartTime = 0,
         Port|float $runUpDistanceFactor = 0,
-        Port|float $strikeDistance = 0
+        Port|float $strikeDistance = 0,
     ) {
+        $this->direction = $direction;
         $this->moveDistance = is_float($moveDistance) ? $slimeHelper->getFloat($moveDistance) : $moveDistance;
         $this->jumpTimeLeft = is_float($jumpTimeLeft) ? $slimeHelper->getFloat($jumpTimeLeft) : $jumpTimeLeft;
         $this->stepBackDistance = is_float($stepBackDistance) ? $slimeHelper->getFloat($stepBackDistance) : $stepBackDistance;

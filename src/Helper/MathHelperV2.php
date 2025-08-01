@@ -348,4 +348,28 @@ class MathHelperV2 extends MathHelper
             $this->getAddValue($atan_base, $adjustment)
         );
     }
+
+    // In your MathHelperV2.php file
+    /**
+     * Reflects an incoming velocity vector across a surface normal.
+     *
+     * @param Port $incomingVector The velocity vector before the bounce.
+     * @param Port $normalVector The normal vector of the surface hit.
+     * @param Port|float $restitution The bounciness factor (0.0 to 1.0).
+     * @return Port The new velocity vector after the bounce.
+     */
+    public function getReflectedVector(Port $incomingVector, Port $normalVector, Port|float $restitution = 1.0): Port
+    {
+        $restitution = is_float($restitution) ? $this->getFloat($restitution) : $restitution;
+
+        // Dot product: dot = v_in ⋅ n
+        $dot = $this->getDotProduct($incomingVector, $normalVector);
+
+        // The reflection calculation: v_in - 2 * dot * n
+        $reflectionComponent = $this->getScaleVector3($normalVector, $this->getMultiplyValue(-2.0, $dot));
+        $reflectedVector = $this->getAddVector3($incomingVector, $reflectionComponent);
+
+        // Apply restitution (bounciness)
+        return $this->getScaleVector3($reflectedVector, $restitution);
+    }
 }

@@ -164,6 +164,7 @@ class SlimeHelper
     public ?Port $baseSide = null;
     public ?Port $enemySide = null;
     public ?Port $isOpponentHasNoJump = null;
+    public ?Port $isSelfHasNoJump = null;
     public ?Port $isOpponentNearNet = null;
     public ?Port $isSelfNearNet = null;
     public ?Port $normalizedFromBallToSelf = null;
@@ -263,6 +264,12 @@ class SlimeHelper
         )->getOutputX();
         $this->baseSide = $this->math->getSignValue($this->baseSide);
         $this->enemySide = $this->getInverseValue($this->baseSide);
+
+        $this->isSelfHasNoJump = $this->compareBool(
+            BooleanOperator::NOT,
+            $this->getVolleyballBool(VolleyballGetBoolModifier::SELF_CAN_JUMP)
+        );
+
 
         $this->isOpponentHasNoJump = $this->compareBool(
             BooleanOperator::NOT,
@@ -568,6 +575,9 @@ class SlimeHelper
             );
         }
 
+        $posX = $this->getClampedValue($effectiveNegativeX, $effectivePositiveX, $posX);
+        $posZ = $this->getClampedValue($effectiveNegativeZ, $effectivePositiveZ, $posZ);
+
         return ['x' => $posX, 'z' => $posZ];
     }
 
@@ -801,26 +811,25 @@ class SlimeHelper
     public function getDesiredRunningSpike(
         Port $landingWhere,
         Port $landingWhen,
-        Port $directionToStepBack,
         SpikeConfig $config
     ): array {
         // No more type-checking needed here! Everything is already a Port.
 
         $jumpPosition = $this->math->movePointAlongVector(
             $landingWhere,
-            $directionToStepBack,
+            $config->direction,
             $config->stepBackDistance
         );
 
         $runUpPosition = $this->math->movePointAlongVector(
             $jumpPosition,
-            $directionToStepBack,
+            $config->direction,
             $this->getMultiplyValue($config->stepBackDistance, $config->runUpDistanceFactor)
         );
 
         $strikePosition = $this->math->movePointAlongVector(
             $jumpPosition,
-            $this->math->getInverseVector3($directionToStepBack),
+            $this->math->getInverseVector3($config->direction),
             $config->strikeDistance
         );
 
@@ -1436,6 +1445,107 @@ class SlimeHelper
     }
 
     /**
+     * Calculates the ball's velocity vector at a specific target height.
+     *
+     * @param Port $targetY The target Y-position (height).
+     * @param Port $currentBallPos The ball's current position vector.
+     * @param Port $currentBallVel The ball's current velocity vector.
+     * @return Port The ball's full velocity vector at the target height.
+     */
+    public function getBallVelocityAtHeight(Port $targetY, Port $currentBallPos, Port $currentBallVel): Port
+    {
+        $posSplit = $this->math->splitVector3($currentBallPos);
+        $velSplit = $this->math->splitVector3($currentBallVel);
+
+        $y_initial = $posSplit->getOutputY();
+        $vy_initial_sq = $this->math->getSquareValue($velSplit->getOutputY());
+
+        // deltaY = targetY - y_initial
+        $deltaY = $this->math->getSubtractValue($targetY, $y_initial);
+
+        // 2 * g * deltaY
+        $gravityTerm = $this->math->getMultiplyValue($this->getFloat(2.0 * self::GRAVITY), $deltaY);
+
+        // vy_final_sq = vy_initial_sq + 2 * g * deltaY
+        $vy_final_sq = $this->math->getAddValue($vy_initial_sq, $gravityTerm);
+
+        // vy_final = -sqrt(vy_final_sq) (negative because it's typically falling)
+        $vy_final = $this->math->getInverseValue($this->math->getSqrtValue($this->math->getMaxValue(0.0, $vy_final_sq)));
+
+        return $this->math->constructVector3($velSplit->getOutputX(), $vy_final, $velSplit->getOutputZ());
+    }
+
+    /**
+     * Simulates a hit off the opponent and predicts the ball's new landing spot.
+     * This function is fully self-contained, calculating the impact velocity internally.
+     *
+     * @param Port $ballLandingWhere The ball's original predicted landing position.
+     * @param Port $opponentPosition The opponent's position at the moment of impact.
+     * @return array An array containing the new 'position' and 'time' of landing.
+     */
+    public function simulateHitOffOpponent(
+        Port $ballLandingWhere,
+        Port $opponentPosition
+    ): array {
+        $opponentPosSplit = $this->math->splitVector3($opponentPosition);
+        $impactPoint = $opponentPosition;
+
+        // 1. Calculate the ball's velocity at the moment of impact using its current state.
+        $ballVelocityAtImpact = $this->getBallVelocityAtHeight(
+            $opponentPosSplit->getOutputY(),
+            $this->ballPosition, // Use the current ball position
+            $this->ballVelocity  // Use the current ball velocity
+        );
+
+        // 2. Calculate the "overshoot distance" to determine the type of hit.
+        $landingPosSplit = $this->math->splitVector3($ballLandingWhere);
+        $overshootDistance = $this->math->getDistance2D(
+            $opponentPosSplit->getOutputX(),
+            $opponentPosSplit->getOutputZ(),
+            $landingPosSplit->getOutputX(),
+            $landingPosSplit->getOutputZ()
+        );
+
+        // 3. Remap the overshoot distance to a dynamic restitution value.
+        $dynamicRestitution = $this->math->remapValue(
+            $overshootDistance,
+            self::SLIME_RADIUS,
+            5.0, // Input distance range
+            0.7,
+            0.4                 // Output restitution range (bouncy to dull)
+        );
+
+        // 4. Calculate the reflection normal based on the landing spot.
+        $normalVector = $this->math->getDirection($ballLandingWhere, $opponentPosition);
+
+        // 5. Calculate the new velocity after reflecting off the opponent.
+        $newVelocity = $this->math->getReflectedVector(
+            $ballVelocityAtImpact,
+            $normalVector,
+            $dynamicRestitution
+        );
+
+        // --- Temporarily override class properties to predict the new trajectory ---
+        $originalBallPos = $this->ballPosition;
+        $originalBallVel = $this->ballVelocity;
+
+        $this->ballPosition = $impactPoint;
+        $this->ballVelocity = $newVelocity;
+        $this->ballPositionSplit = $this->math->splitVector3($this->ballPosition);
+        $this->ballVelocitySplit = $this->math->splitVector3($this->ballVelocity);
+
+        $newLandingPrediction = $this->getQuickLandingPositionWithBounces();
+
+        // --- Restore original properties ---
+        $this->ballPosition = $originalBallPos;
+        $this->ballVelocity = $originalBallVel;
+        $this->ballPositionSplit = $this->math->splitVector3($this->ballPosition);
+        $this->ballVelocitySplit = $this->math->splitVector3($this->ballVelocity);
+
+        return $newLandingPrediction;
+    }
+
+    /**
      * Finds the corner farthest from opponent for targeted attacks
      * @return Port Vector3 position of optimal attack corner
      */
@@ -1443,8 +1553,8 @@ class SlimeHelper
     {
         $enemySide = $this->math->getSignValue($this->opponentPositionSplit->x);
         $margin = self::BALL_RADIUS; // Safety margin from boundaries
-        $halfWidth = $this->getFloat(self::STAGE_HALF_WIDTH - $margin);
-        $halfLength = $this->getFloat(self::STAGE_HALF_DEPTH - $margin);
+        $halfWidth = $this->getFloat(self::STAGE_HALF_WIDTH - $margin - 1.5);
+        $halfLength = $this->getFloat(self::STAGE_HALF_DEPTH - $margin - 1.5);
         $halfWidth = $this->getMultiplyValue($halfWidth, $enemySide);
 
         // Define four attack target corners
