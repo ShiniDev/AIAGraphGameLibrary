@@ -804,7 +804,6 @@ class SlimeHelper
      *
      * @param Port $landingWhere The predicted landing position of the ball.
      * @param Port $landingWhen The predicted time until the ball lands.
-     * @param Port $directionToStepBack The vector direction to step back.
      * @param SpikeConfig $config An object containing all spike parameters as Ports.
      * @return array An array containing the 'moveTo' Vector3 and 'shouldJump' boolean ports.
      */
@@ -1428,21 +1427,6 @@ class SlimeHelper
         return $this->math->constructVector3($x, 0, $z);
     }
 
-    /**
-     * Checks if two float ports are almost equal within a small tolerance (epsilon).
-     * This is crucial for avoiding floating-point imprecision errors.
-     *
-     * @param Port $a The first float port.
-     * @param Port $b The second float port.
-     * @param float $epsilon The tolerance.
-     * @return Port A boolean port that is true if they are almost equal.
-     */
-    public function isAlmostEqual(Port $a, Port $b, float $epsilon = 0.0000001): Port
-    {
-        $difference = $this->math->getSubtractValue($a, $b);
-        $absoluteDifference = $this->getAbsValue($difference);
-        return $this->compareFloats(FloatOperator::LESS_THAN, $absoluteDifference, $epsilon);
-    }
 
     /**
      * Calculates the ball's velocity vector at a specific target height.

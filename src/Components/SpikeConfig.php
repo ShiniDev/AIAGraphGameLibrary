@@ -39,7 +39,7 @@ class SpikeConfig
         Port|float $stepBackDistance = 0,
         Port|float $runUpStartTime = 0,
         Port|float $runUpDistanceFactor = 0,
-        Port|float $strikeDistance = 0,
+        Port|float $strikeDistance = 1,
     ) {
         $this->direction = $direction;
         $this->moveDistance = is_float($moveDistance) ? $slimeHelper->getFloat($moveDistance) : $moveDistance;
