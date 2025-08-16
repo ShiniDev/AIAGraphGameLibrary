@@ -59,7 +59,7 @@ class Kart extends Node
      * Connects a source port to this node's spherecast top input.
      * @param Port $port The source port providing the Spherecast value.
      */
-    public function connectSpherecastTop(Port $port)
+    public function connectSpherecastLeft(Port $port)
     {
         $port->connectTo($this->spherecastTopInput);
         return $this;
@@ -79,13 +79,13 @@ class Kart extends Node
      * Connects a source port to this node's spherecast bottom input.
      * @param Port $port The source port providing the Spherecast value.
      */
-    public function connectSpherecastBottom(Port $port)
+    public function connectSpherecastRight(Port $port)
     {
         $port->connectTo($this->spherecastBottomInput);
         return $this;
     }
 
-    public function getRaycastHitTop(): Port
+    public function getRaycastHitLeft(): Port
     {
         return $this->raycastHitTopOutput;
     }
@@ -93,7 +93,7 @@ class Kart extends Node
     {
         return $this->raycastHitMiddleOutput;
     }
-    public function getRaycastHitBottom(): Port
+    public function getRaycastHitRight(): Port
     {
         return $this->raycastHitBottomOutput;
     }

@@ -650,21 +650,4 @@ trait NodeFactory
             return $this->createKartGetVector3(GetKartVector3Modifier::CenterOfLastWaypoint)->getOutput();
         });
     }
-
-    /**
-     * Robustly checks if two Vector3 points are effectively in the same position.
-     *
-     * @param Port $a The first vector.
-     * @param Port $b The second vector.
-     * @param float $tolerance A small threshold to account for floating-point errors.
-     * @return Port A boolean Port that is true if the vectors are almost equal.
-     */
-    public function areVectorsAlmostEqual(Port $a, Port $b, float $tolerance = 0.001): Port
-    {
-        // 1. Calculate the distance between the two points.
-        $distance = $this->math->getDistance($a, $b);
-
-        // 2. Check if the distance is less than our tiny tolerance.
-        return $this->compareFloats(FloatOperator::LESS_THAN, $distance, $tolerance);
-    }
 }
