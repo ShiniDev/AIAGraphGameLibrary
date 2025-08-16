@@ -380,6 +380,9 @@ class Graph implements \JsonSerializable
         if (empty($rootNodeIds)) {
             return;
         }
+        if (defined('DEBUG') && DEBUG) {
+            return;
+        }
 
         // Pre-build a fast lookup map for connections
         $inputPortToSourceNode = [];

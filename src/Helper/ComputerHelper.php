@@ -16,10 +16,12 @@ use GraphLib\Traits\SlimeFactory;
 class ComputerHelper
 {
     use SlimeFactory;
+    public MathHelper $math;
 
     public function __construct(Graph $graph)
     {
         $this->graph = $graph;
+        $this->math = new MathHelper($graph);
     }
 
     /**
@@ -393,5 +395,228 @@ class ComputerHelper
 
         // 6. Return the main output port, which is also used for the feedback.
         return $currentCount;
+    }
+
+    // In your ComputerHelper.php class
+
+    /**
+     * Selects between two complete action arrays based on a boolean condition.
+     * An "action" is an array containing 'moveTo' (Vector3 Port) and 'shouldJump' (Bool Port).
+     *
+     * @param Port $condition The boolean Port that determines which action to choose.
+     * @param array $trueAction The action array to return if the condition is true.
+     * @param array $falseAction The action array to return if the condition is false.
+     * @return array The final, conditional action array.
+     */
+    public function getConditionalAction(Port $condition, array $trueAction, array $falseAction): array
+    {
+        // Create a new conditional Vector3 Port for the movement target.
+        $finalMoveTo = $this->getConditionalVector3(
+            $condition,
+            $trueAction['moveTo'],
+            $falseAction['moveTo']
+        );
+
+        // Create a new conditional Bool Port for the jump command.
+        $finalShouldJump = $this->getConditionalBool(
+            $condition,
+            $trueAction['shouldJump'],
+            $falseAction['shouldJump']
+        );
+
+        // Return the new action array composed of the conditional ports.
+        return [
+            'moveTo'     => $finalMoveTo,
+            'shouldJump' => $finalShouldJump
+        ];
+    }
+
+    /**
+     * Creates a clock that increments a value by a set amount until it reaches a step limit.
+     * Can be reset to zero at any time by the reset signal.
+     *
+     * @param int        $step The value at which the clock stops incrementing.
+     * @param int        $increment The amount to add to the clock each frame.
+     * @param Port|null  $reset A boolean Port that, when true, forces the clock back to 0.
+     * @return Port The output port representing the current value of the clock.
+     */
+    public function clock(int $step, int $increment = 1, ?Port $reset = null): Port
+    {
+        // --- 1. Create the Core Components ---
+        $clockRegister = $this->createConditionalSetFloat(ConditionalBranch::TRUE);
+        $incrementGate = $this->createConditionalSetFloat(ConditionalBranch::TRUE);
+        $newValueAdder = $this->createAddFloats();
+        $isClockRunning = $this->createCompareFloats(FloatOperator::LESS_THAN);
+
+        // --- 2. Connect the Incrementing Logic ---
+        $isClockRunning->connectInputB($this->getFloat($step));
+
+        $clockRegister->connectCondition($isClockRunning->getOutput());
+        $incrementGate->connectCondition($isClockRunning->getOutput());
+        $incrementGate->connectFloat($this->getFloat($increment));
+
+        $newValueAdder->connectInputA($clockRegister->getOutput());
+        $newValueAdder->connectInputB($incrementGate->getOutput());
+
+        $incrementedValue = $newValueAdder->getOutput();
+
+        // --- 3. Add the Reset Logic ---
+        $valueForNextFrame = $incrementedValue;
+        if ($reset !== null) {
+            // If the reset signal is true, the next value is 0.
+            // Otherwise, it's the normally incremented value.
+            $valueForNextFrame = $this->getConditionalFloat(
+                $reset,
+                $this->getFloat(0.0), // Value on reset
+                $incrementedValue
+            );
+        }
+
+        // --- 4. Create the Feedback Loop ---
+        // The new value (with the reset override) is fed back into the register.
+        $clockRegister->connectFloat($valueForNextFrame);
+        $isClockRunning->connectInputA($valueForNextFrame);
+
+        return $valueForNextFrame;
+    }
+    /**
+     * Creates a timer that counts up in frames when a condition is true,
+     * and resets to a specific value when the condition is false.
+     *
+     * @param Port       $enableCondition A boolean Port. The timer runs when this is true.
+     * @param float|Port $resetValue      The value the timer resets to when disabled.
+     * @return Port The output port representing the current value of the timer in seconds.
+     */
+    public function createConditionalTimer(Port $enableCondition, float|Port $resetValue = 0.0): Port
+    {
+        // 1. The memory cell holds the timer's value from the previous frame.
+        $memoryCell = $this->createConditionalSetFloat(ConditionalBranch::TRUE);
+        $memoryCell->connectCondition($this->getBool(true)); // Always ready to store the next value.
+        $previousTime = $memoryCell->getOutput();
+
+        // 2. Calculate what the next incremented time would be.
+        $incrementedTime = $this->getAddValue($previousTime, 1);
+
+        // 3. Use the enable condition to decide the timer's next value.
+        // If enabled, use the incremented time.
+        // If disabled, use the reset value.
+        $nextTime = $this->getConditionalFloat(
+            $enableCondition,
+            $incrementedTime,
+            $this->normalizeInputToPort($resetValue)
+        );
+
+        // 4. Complete the feedback loop.
+        // The calculated next time is fed back into the memory cell for the next frame.
+        $memoryCell->connectFloat($nextTime);
+
+        // The output of the timer is the currently calculated time.
+        return $nextTime;
+    }
+
+    /**
+     * Creates a memory latch. It stores the '$valueToStore' when the '$condition' is true,
+     * and retains its last stored value when the condition is false.
+     *
+     * @param Port       $condition     A boolean Port. The latch updates when this is true.
+     * @param Port       $valueToStore  The Port (e.g., float) to store.
+     * @param mixed      $initialValue  The initial value before the condition has ever been met.
+     * @return Port The output port holding the stored value.
+     */
+    public function storeFloatValueWhen(Port $condition, Port $valueToStore, Port $frames, mixed $initialValue = 0.0): Port
+    {
+        $key = "store_float_value_when_{$condition->sID}_{$valueToStore->sID}";
+        return $this->getOrCache($key, function () use ($condition, $valueToStore, $initialValue, $frames) {
+            // This node acts as the memory cell. Its output is the value from the previous frame.
+            $memoryCell = $this->createConditionalSetFloat(ConditionalBranch::TRUE);
+            $memoryCell->connectCondition($this->getBool(true)); // Always be ready to store.
+
+            $previousValue = $memoryCell->getOutput();
+
+            // The core latch logic: if the condition is true, take the new value; otherwise, hold the old one.
+            $nextValueToStore = $this->getConditionalFloat($condition, $valueToStore, $previousValue);
+
+            // The feedback loop: The calculated next value is fed back into the memory cell.
+            $memoryCell->connectFloat($nextValueToStore);
+
+            // On frame 0, the memory is empty, so we must output the initial value.
+            // On all other frames, we output the value stored from the previous frame.
+            $isFirstFrame = $this->compareFloats(FloatOperator::LESS_THAN, $frames, 5);
+
+            return $this->getConditionalFloat(
+                $isFirstFrame,
+                $this->normalizeInputToPort($initialValue), // Use initialValue on frame 0
+                $previousValue                            // Use the stored value on all other frames
+            );
+        });
+    }
+
+    public function storeVector3ValueWhen(Port $condition, Port $valueToStore, Port $frames, mixed $initialValue = 0.0)
+    {
+        $vSplit = $this->math->splitVector3($valueToStore);
+        $xStored = $this->storeFloatValueWhen($condition, $vSplit->getOutputX(), $frames, $vSplit->getOutputX());
+        $yStored = $this->storeFloatValueWhen($condition, $vSplit->getOutputY(), $frames, $vSplit->getOutputY());
+        $zStored = $this->storeFloatValueWhen($condition, $vSplit->getOutputZ(), $frames, $vSplit->getOutputZ());
+        return $this->math->constructVector3($xStored, $yStored, $zStored);
+    }
+
+    /**
+     * Samples a value every X frames and holds it.
+     *
+     * @param Port $valueToStore The Port (e.g., a float) to sample.
+     * @param int  $frameInterval The number of frames between each sample.
+     * @param mixed $initialValue The initial value to hold.
+     * @return Port The output port holding the latest sampled value.
+     */
+    public function sampleFloatValueEveryXFrames(Port $valueToStore, Port $globalFrames, int $frameInterval, mixed $initialValue = 0.0): Port
+    {
+        // 1. Create a looping clock to generate a pulse every '$frameInterval' frames.
+        $shouldResetClock = $this->createCompareFloats(FloatOperator::EQUAL_TO);
+        $frameCounter = $this->clock($frameInterval, 1, $shouldResetClock->getOutput());
+
+        $shouldResetClock->connectInputA($frameCounter);
+        $shouldResetClock->connectInputB($this->getFloat($frameInterval - 1));
+
+        // The pulse is true for only one frame when the counter is at 0.
+        $shouldSampleNow = $this->compareFloats(FloatOperator::EQUAL_TO, $frameCounter, 0.0);
+
+        // 2. Use your existing 'storeFloatValueWhen' function as the memory latch.
+        // It will only update its value when our '$shouldSampleNow' pulse is true.
+        return $this->storeFloatValueWhen(
+            $shouldSampleNow,
+            $valueToStore,
+            $globalFrames,
+            $valueToStore
+        );
+    }
+
+    /**
+     * Samples a value every X frames and holds it.
+     *
+     * @param Port $valueToStore The Port (e.g., a float) to sample.
+     * @param int  $frameInterval The number of frames between each sample.
+     * @param mixed $initialValue The initial value to hold.
+     * @return Port The output port holding the latest sampled value.
+     */
+    public function sampleVec3ValueEveryXFrames(Port $valueToStore, Port $globalFrames, int $frameInterval, mixed $initialValue = 0.0): Port
+    {
+        // 1. Create a looping clock to generate a pulse every '$frameInterval' frames.
+        $shouldResetClock = $this->createCompareFloats(FloatOperator::EQUAL_TO);
+        $frameCounter = $this->clock($frameInterval, 1, $shouldResetClock->getOutput());
+
+        $shouldResetClock->connectInputA($frameCounter);
+        $shouldResetClock->connectInputB($this->getFloat($frameInterval - 1));
+
+        // The pulse is true for only one frame when the counter is at 0.
+        $shouldSampleNow = $this->compareFloats(FloatOperator::EQUAL_TO, $frameCounter, 0.0);
+
+        // 2. Use your existing 'storeFloatValueWhen' function as the memory latch.
+        // It will only update its value when our '$shouldSampleNow' pulse is true.
+        return $this->storeVector3ValueWhen(
+            $shouldSampleNow,
+            $valueToStore,
+            $globalFrames,
+            $valueToStore
+        );
     }
 }

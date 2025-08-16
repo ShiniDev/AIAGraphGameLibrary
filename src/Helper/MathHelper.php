@@ -241,7 +241,22 @@ class MathHelper
         return $this->getAddValue($a, $interp);
     }
 
-    public function getLerpVector3Value(Port $a, Port $b, Port $t)
+    public function getSignValue(float|Port $value): Port
+    {
+        return $this->getOrCache($this->keyMaker("sign_", $value), function () use ($value) {
+            return $this->getConditionalFloat(
+                $this->compareFloats(FloatOperator::GREATER_THAN, $value, 0.0),
+                1.0,
+                $this->getConditionalFloat(
+                    $this->compareFloats(FloatOperator::LESS_THAN, $value, 0.0),
+                    -1.0,
+                    0.0
+                )
+            );
+        });
+    }
+
+    public function getLerpVector3Value(Port $a, Port $b, float|Port $t)
     {
         $a_split = $this->splitVector3($a);
         $b_split = $this->splitVector3($b);
@@ -770,6 +785,7 @@ class MathHelper
         float|Port $toMin,
         float|Port $toMax
     ): Port {
+        $inputValue = $this->getClampedValue($fromMin, $fromMax, $inputValue);
         // Numerator: (inputValue - fromMin) * (toMax - toMin)
         $valSub = $this->getSubtractValue($inputValue, $fromMin);
         $rangeTo = $this->getSubtractValue($toMax, $toMin);
@@ -844,5 +860,89 @@ class MathHelper
 
         // Construct the new vector using the new Z and original X/Y
         return $this->constructVector3($originalX, $originalY, $newZ);
+    }
+
+    // Add this to your MathHelper.php class
+
+    /**
+     * Calculates a point on a 3D Cubic Bézier curve at a given time 't'.
+     * Formula: B(t) = (1-t)³P₀ + 3(1-t)²tP₁ + 3(1-t)t²P₂ + t³P₃
+     *
+     * @param Port $p0 The start point of the curve.
+     * @param Port $p1 The first control point.
+     * @param Port $p2 The second control point.
+     * @param Port $p3 The end point of the curve.
+     * @param float|Port $t The time along the curve (from 0.0 to 1.0).
+     * @return Port The calculated Vector3 position on the curve.
+     */
+    public function getBezierPoint(Port $p0, Port $p1, Port $p2, Port $p3, float|Port $t): Port
+    {
+        $tPort = $this->normalizeInputToPort($t);
+
+        // Calculate the coefficients for the Bézier formula
+        $oneMinusT = $this->getSubtractValue(1.0, $tPort);
+        $c0 = $this->getPowerValue($oneMinusT, 3); // (1-t)³
+        $c1 = $this->getMultiplyValue(3.0, $this->getMultiplyValue($this->getSquareValue($oneMinusT), $tPort)); // 3(1-t)²t
+        $c2 = $this->getMultiplyValue(3.0, $this->getMultiplyValue($oneMinusT, $this->getSquareValue($tPort))); // 3(1-t)t²
+        $c3 = $this->getPowerValue($tPort, 3); // t³
+
+        // Scale each point by its corresponding coefficient
+        $term0 = $this->getScaleVector3($p0, $c0);
+        $term1 = $this->getScaleVector3($p1, $c1);
+        $term2 = $this->getScaleVector3($p2, $c2);
+        $term3 = $this->getScaleVector3($p3, $c3);
+
+        // Sum the terms together to get the final point
+        $sum1 = $this->getAddVector3($term0, $term1);
+        $sum2 = $this->getAddVector3($term2, $term3);
+
+        return $this->getAddVector3($sum1, $sum2);
+    }
+
+    // Add this to your MathHelper.php class
+
+    /**
+     * Calculates a point on a 3D Quadratic Bézier curve.
+     *
+     * @param Port $p0 The start point of the curve.
+     * @param Port $p1 The single control point.
+     * @param Port $p2 The end point of the curve.
+     * @param float|Port $t The time along the curve (from 0.0 to 1.0).
+     * @return Port The calculated Vector3 position on the curve.
+     */
+    public function getQuadraticBezierPoint(Port $p0, Port $p1, Port $p2, float|Port $t): Port
+    {
+        $tPort = $this->normalizeInputToPort($t);
+        $oneMinusT = $this->getSubtractValue(1.0, $tPort);
+
+        // Coefficients for the quadratic formula
+        $c0 = $this->getSquareValue($oneMinusT); // (1-t)²
+        $c1 = $this->getMultiplyValue(2.0, $this->getMultiplyValue($oneMinusT, $tPort)); // 2(1-t)t
+        $c2 = $this->getSquareValue($tPort); // t²
+
+        // Scale each point
+        $term0 = $this->getScaleVector3($p0, $c0);
+        $term1 = $this->getScaleVector3($p1, $c1);
+        $term2 = $this->getScaleVector3($p2, $c2);
+
+        // Sum the terms
+        return $this->getAddVector3($this->getAddVector3($term0, $term1), $term2);
+    }
+
+    /**
+     * Robustly checks if two Vector3 points are effectively in the same position.
+     *
+     * @param Port $a The first vector.
+     * @param Port $b The second vector.
+     * @param float $tolerance A small threshold to account for floating-point errors.
+     * @return Port A boolean Port that is true if the vectors are almost equal.
+     */
+    public function areVectorsAlmostEqual(Port $a, Port $b, float $tolerance = 0.001): Port
+    {
+        // 1. Calculate the distance between the two points.
+        $distance = $this->getDistance($a, $b);
+
+        // 2. Check if the distance is less than our tiny tolerance.
+        return $this->compareFloats(FloatOperator::LESS_THAN, $distance, $tolerance);
     }
 }
