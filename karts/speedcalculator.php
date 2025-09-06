@@ -83,6 +83,10 @@ class A
     public function what()
     {
         $clock = $this->createClock(10);
+        $kartPos = $this->getKartPosition();
+        $kartPosSplit = $this->math->splitVector3($kartPos);
+        $pos = $this->createPositionRegister($clock['tickSignal'], $kartPosSplit->x);
+        $this->debug($pos);
         $clock = $this->valueStorage($clock['resetSignal']);
         $this->debug($clock);
         /*   $if1 = $this->createConditionalSetFloat(ConditionalBranch::TRUE);

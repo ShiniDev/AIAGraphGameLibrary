@@ -1,11 +1,13 @@
 <?php
 
+use GraphLib\Enums\BooleanOperator;
 use GraphLib\Enums\ConditionalBranch;
 use GraphLib\Enums\FloatOperator;
 use GraphLib\Enums\GetKartVector3Modifier;
 use GraphLib\Graph\Graph;
 use GraphLib\Graph\Port;
 use GraphLib\Helper\KartHelper;
+use GraphLib\Helper\MathHelper;
 use GraphLib\Helper\Tracks;
 use GraphLib\Nodes\Vector3Split;
 use GraphLib\Traits\SlimeFactory;
@@ -303,9 +305,20 @@ class Shikumi_FSM extends KartHelper
         );
         $this->apexBias = $this->getConditionalFloat(
             $isClover,
-            .5,
+            .3,
             $this->apexBias
         );
+        /* $this->apexBias = $this->getConditionalFloat(
+            $isClover,
+            $this->math->remapValue(
+                $distanceKartToWayPoint,
+                0,
+                $distanceOfWaypoints,
+                .5,
+                1
+            ),
+            $this->apexBias
+        ); */
         $this->apexBias = $this->getConditionalFloat(
             $this->computer->getAndGate(
                 $this->isDownHill,
@@ -625,7 +638,6 @@ class Shikumi_FSM extends KartHelper
             $this->debug($this->masterState);
             $this->debug($this->track);
             $this->debug($this->speed);
-            $this->debug($this->computer->createClock(60));
             $centerOfNextPoint = $this->getCenterOfNextWaypoint();
             $closestOfNextPoint = $this->getClosestOnNextWaypoint();
             $centerOfNextPoint = $this->math->modifyVector3Y($centerOfNextPoint, $this->kartPosSplitFront->y);

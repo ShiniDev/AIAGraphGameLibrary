@@ -3,6 +3,7 @@
 namespace GraphLib\Helper;
 
 use GraphLib\Components\TimerOutputs;
+use GraphLib\Enums\BooleanOperator;
 use GraphLib\Enums\ConditionalBranch;
 use GraphLib\Enums\FloatOperator;
 use GraphLib\Enums\GetKartVector3Modifier;
@@ -34,6 +35,7 @@ class KartHelper
     public ?Port $frames = null;
     public ?Port $speed = null;
     public ?Port $distanceToNextWaypoint = null;
+    public ?Port $distanceOfWaypoints = null;
     public MathHelper $math;
     public ComputerHelper $computer;
 
@@ -44,6 +46,7 @@ class KartHelper
         $this->computer = new ComputerHelper($graph);
         $distance = $this->math->getDistance($this->getKartPosition(), $this->getCenterOfNextWaypoint());
         $this->distanceToNextWaypoint = $distance;
+        $this->distanceOfWaypoints = $this->math->getDistance($this->getCenterOfLastWaypoint(), $this->getCenterOfNextWaypoint());
         $reset = $this->compareFloats(FloatOperator::EQUAL_TO, $distance, 0.0);
         $speed = $this->calculateSpeedFromGraph();
         $this->speed = $speed;
@@ -749,5 +752,33 @@ class KartHelper
         $memoryGate->connectFloat($adder->getOutput());
 
         return $adder->getOutput();
+    }
+
+    public function getInitialRacingPoint()
+    {
+        $clock = $this->computer->createClock(2);
+        $waypoint = $this->getCenterOfNextWaypoint();
+
+        $previousWaypoint = $this->computer->storeVector3When(
+            $clock['resetSignal'],
+            $waypoint,
+        );
+        $dist = $this->math->getDistance($previousWaypoint, $waypoint);
+        $isWaypointChanged = $this->compareFloats(FloatOperator::GREATER_THAN, $dist, 0.1);
+        $comp = $this->createCompareBool(BooleanOperator::OR);
+        $racingLine = $this->getClosestOnNextWaypoint();
+        $storedWaypointPosition = $this->computer->storeVector3When(
+            $comp->getOutput(),
+            $racingLine,
+        );
+
+        $comp->connectInputA($isWaypointChanged);
+        $dist = $this->math->getDistance($storedWaypointPosition, $racingLine);
+        $isNotUpdated = $this->compareFloats(FloatOperator::GREATER_THAN, $dist, 2);
+        $comp->connectInputB($isNotUpdated);
+
+        $kartPos = $this->getKartPosition();
+        $kartPosSplit = $this->math->splitVector3($kartPos);
+        return $storedWaypointPosition;
     }
 }

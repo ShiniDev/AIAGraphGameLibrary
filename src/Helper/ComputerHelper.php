@@ -730,49 +730,88 @@ class ComputerHelper
         return $this->math->constructVector3($previousX, $previousY, $previousZ);
     }
 
-    /**
-     * Creates a clock that tracks the total number of seconds elapsed.
-     * @param int $framesPerSecond The number of frames that constitute one second (e.g., 60).
-     * @return Port A Port that outputs the total running seconds.
-     */
-    public function createClock(int $framesPerSecond): Port
+    public function createClock(float $countTo, float $step = 1.0): array
     {
-        $key = "clock_total_seconds_{$framesPerSecond}";
-        return $this->getOrCache($key, function () use ($framesPerSecond) {
-            // --- Part 1: Build a Looping Frame Counter ---
+        $if1 = $this->createConditionalSetFloat(ConditionalBranch::TRUE);
+        $if2 = $this->createConditionalSetFloat(ConditionalBranch::TRUE);
+        $add1 = $this->createAddFloats();
+        $add1->connectInputA($if1->getOutput());
+        $add1->connectInputB($if2->getOutput());
+        $if1->connectFloat($add1->getOutput());
+        $if2->connectFloat($this->getFloat($step));
+        $add2 = $this->createAddFloats();
+        $add2->connectInputA($add1->getOutput());
+        $add2->connectInputB($this->getFloat(0));
+        $this->hideDebug($add2->getOutput());
+        $compFloats1 = $this->createCompareFloats(FloatOperator::LESS_THAN);
+        $compFloats1->connectInputA($add2->getOutput());
+        $compFloats1->connectInputB($this->getFloat($countTo));
+        $if1->connectCondition($compFloats1->getOutput());
+        $if2->connectCondition($compFloats1->getOutput());
+        return [
+            'value' => $add2->getOutput(),
+            'tickSignal' => $compFloats1->getOutput(),
+            'resetSignal' => $this->createNot()->connectInput($compFloats1->getOutput())->getOutput()
+        ];
+    }
 
-            // 1. Create a simple register to store the count from the previous frame.
-            $frameCountRegister = $this->createConditionalSetFloat(ConditionalBranch::TRUE);
-            $frameCountRegister->connectCondition($this->getBool(true));
-            $lastFrameCount = $frameCountRegister->getOutput();
+    public function valueStorage(Port $incrementSignal, ?Port $holdSignal = null, Port|float $incrementValue = 1.0, Port|float $initialValue = 0.0): Port
+    {
+        if ($holdSignal === null) {
+            $holdSignal = $this->getBool(true);
+        }
+        $if1 = $this->createConditionalSetFloat(ConditionalBranch::TRUE);
+        $if2 = $this->createConditionalSetFloat(ConditionalBranch::TRUE);
+        $add1 = $this->createAddFloats();
+        $add1->connectInputA($if1->getOutput());
+        $add1->connectInputB($if2->getOutput());
+        $if1->connectFloat($add1->getOutput());
+        $if2->connectFloat($this->getFloat($incrementValue));
+        $add2 = $this->createAddFloats();
+        $add2->connectInputA($add1->getOutput());
+        $add2->connectInputB($this->getFloat($initialValue));
+        $this->debug($add2->getOutput());
+        $if1->connectCondition($holdSignal);
+        $if2->connectCondition($incrementSignal);
+        return $add2->getOutput();
+    }
 
-            // 2. Create an adder to increment the count.
-            $adder = $this->createAddFloats();
-            $adder->connectInputA($lastFrameCount);
-            $adder->connectInputB($this->getFloat(1));
-            $potentialNextCount = $adder->getOutput();
+    public function createMemoryLatch(Port $updateCondition, Port $newValueToStore): Port
+    {
+        $memoryNode = $this->createConditionalSetFloat(ConditionalBranch::TRUE);
+        $memoryNode->connectCondition($this->getBool(true));
+        $previousValue = $memoryNode->getOutput();
 
-            // 3. Create a comparator to check if the counter needs to roll over.
-            $comparator = $this->createCompareFloats(FloatOperator::GREATER_THAN_OR_EQUAL);
-            $comparator->connectInputA($potentialNextCount);
-            $comparator->connectInputB($this->getFloat($framesPerSecond));
-            $isRollover = $comparator->getOutput();
+        $nextValueToStore = $this->getConditionalFloat(
+            $updateCondition,
+            $newValueToStore,
+            $previousValue
+        );
 
-            // 4. Choose the next value: 0 if rolling over, otherwise the incremented count.
-            $actualNextCount = $this->getConditionalFloat(
-                $isRollover,
-                $this->getFloat(0),
-                $potentialNextCount
-            );
+        $memoryNode->connectFloat($nextValueToStore);
+        $this->hideDebug($previousValue);
+        return $previousValue;
+    }
 
-            // 5. IMPORTANT: Close the feedback loop.
-            $frameCountRegister->connectFloat($actualNextCount);
+    public function storeFloatWhen(Port $updateCondition, Port $floatToStore): Port
+    {
+        return $this->createMemoryLatch(
+            $updateCondition,
+            $floatToStore
+        );
+    }
 
-            // --- Part 2: Use the rollover pulse to accumulate total seconds ---
-            // The `$isRollover` port now acts as a clean, once-per-second pulse.
-            $totalSeconds = $this->createAccumulator($this->getFloat(1), $isRollover);
+    public function storeVector3When(Port $updateCondition, Port $vectorToStore): Port
+    {
 
-            return $totalSeconds;
-        });
+        $splitVector = $this->math->splitVector3($vectorToStore);
+
+
+        $storedX = $this->storeFloatWhen($updateCondition, $splitVector->x);
+        $storedY = $this->storeFloatWhen($updateCondition, $splitVector->y);
+        $storedZ = $this->storeFloatWhen($updateCondition, $splitVector->z);
+
+
+        return $this->math->constructVector3($storedX, $storedY, $storedZ);
     }
 }
