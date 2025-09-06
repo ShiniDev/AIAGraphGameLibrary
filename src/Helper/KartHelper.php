@@ -2,6 +2,8 @@
 
 namespace GraphLib\Helper;
 
+use GraphLib\Components\TimerOutputs;
+use GraphLib\Enums\ConditionalBranch;
 use GraphLib\Enums\FloatOperator;
 use GraphLib\Enums\GetKartVector3Modifier;
 use GraphLib\Graph\Graph;
@@ -43,18 +45,8 @@ class KartHelper
         $distance = $this->math->getDistance($this->getKartPosition(), $this->getCenterOfNextWaypoint());
         $this->distanceToNextWaypoint = $distance;
         $reset = $this->compareFloats(FloatOperator::EQUAL_TO, $distance, 0.0);
-        $speed = $this->getKartSpeed(60);
+        $speed = $this->calculateSpeedFromGraph();
         $this->speed = $speed;
-        /*  $reset = $this->computer->getAndGate(
-            $reset,
-            $this->compareFloats(FloatOperator::EQUAL_TO, $speed, 0.0)
-        ); */
-        $previousPosition = $this->getKartPreviousPosition(120);
-        $kartPosition = $this->getKartPosition();
-        /* $reset = $this->computer->getOrGate(
-            $reset,
-            $this->math->areVectorsAlmostEqual($kartPosition, $previousPosition)
-        ); */
         $this->frames = $this->computer->clock(9999999999, 1, $reset);
         $this->track = $this->getTrackId();
     }
@@ -206,6 +198,41 @@ class KartHelper
         $holdLatch = is_null($holdLatch) ? $samplerLatch : $holdLatch;
 
         return $holdLatch;
+    }
+
+    /**
+     * Calculates the kart's current scalar speed (the magnitude of its velocity).
+     * @return Port A float Port representing the kart's speed.
+     */
+    public function getSpeed(): Port
+    {
+        // 1. Calculate the full velocity vector (change in position over time).
+        $velocityVector = $this->calculateKartVelocity();
+
+        // 2. The speed is simply the magnitude (length) of the velocity vector.
+        return $this->math->getMagnitude($velocityVector);
+    }
+
+    /**
+     * Calculates the kart's current velocity vector based on its
+     * change in position since the last frame.
+     *
+     * @return Port A Vector3 Port representing the kart's velocity.
+     */
+    public function calculateKartVelocity(): Port
+    {
+        // Get the position from this frame and the last frame.
+        $currentPosition = $this->getKartPosition();
+        $previousPosition = $this->getKartPreviousPosition(1); // Assumes this helper exists
+
+        // Calculate the displacement vector (the change in position).
+        $displacement = $this->math->getSubtractVector3($currentPosition, $previousPosition);
+
+        // Divide by time to get velocity.
+        $timePerFrame = 1.0 / 60.0; // Assuming 60 FPS
+        $inverseTime = 1.0 / $timePerFrame;
+
+        return $this->math->getScaleVector3($displacement, $inverseTime);
     }
 
     /**
@@ -575,5 +602,152 @@ class KartHelper
         }
 
         return $targetWaypoint;
+    }
+
+    /**
+     * Builds the speed calculator graph from the provided JSON file.
+     * This is an organized version of the direct, low-level translation.
+     *
+     * @return Port The final output Port from the graph's calculation.
+     */
+    /*  public function calculateSpeedFromGraph(): Port
+    {
+        // --- Part 1: 4-Frame Timer ---
+        // This clock runs for 4 frames (0, 1, 2, 3) and then stops.
+        $frameCounterRegister = $this->createConditionalSetFloat(ConditionalBranch::TRUE);
+        $incrementGate = $this->createConditionalSetFloat(ConditionalBranch::TRUE);
+        $frameCounterAdder = $this->createAddFloats();
+        $isTimeWindowActive = $this->createCompareFloats(FloatOperator::LESS_THAN);
+
+        $isTimeWindowActive->connectInputA($frameCounterAdder->getOutput());
+        $isTimeWindowActive->connectInputB($this->getFloat(4));
+        $frameCounterRegister->connectCondition($isTimeWindowActive->getOutput());
+        $incrementGate->connectCondition($isTimeWindowActive->getOutput());
+        $incrementGate->connectFloat($this->getFloat(1));
+        $frameCounterAdder->connectInputA($frameCounterRegister->getOutput());
+        $frameCounterAdder->connectInputB($incrementGate->getOutput());
+        $frameCounterRegister->connectFloat($frameCounterAdder->getOutput());
+        $frameCounter = $frameCounterAdder->getOutput();
+
+        $this->hideDebug($frameCounter);
+
+        // --- Part 2: Sample and Hold Kart Position ---
+        // This complex structure stores the kart's position only when the time window is active.
+        $kartPosition = $this->getKartPosition();
+        $kartPosSplit = $this->math->splitVector3($kartPosition);
+
+        $previousX = $this->createPositionRegister($isTimeWindowActive->getOutput(), $kartPosSplit->x);
+        $previousY = $this->createPositionRegister($isTimeWindowActive->getOutput(), $kartPosSplit->y);
+        $previousZ = $this->createPositionRegister($isTimeWindowActive->getOutput(), $kartPosSplit->z);
+
+        $previousPosition = $this->math->constructVector3($previousX, $previousY, $previousZ);
+
+        // --- Part 3: Sample the Distance on a Specific Frame ---
+        // This logic calculates the distance, but only "latches" it on the 3rd frame (when counter == 2).
+        $distanceThisFrame = $this->math->getDistance($previousPosition, $kartPosition);
+        $this->hideDebug($distanceThisFrame);
+
+        $isSampleFrame = $this->createCompareFloats(FloatOperator::EQUAL_TO);
+        $isSampleFrame->connectInputA($frameCounter);
+        $isSampleFrame->connectInputB($this->getFloat(2));
+
+        $distanceSampler = $this->createConditionalSetFloat(ConditionalBranch::TRUE);
+        $distanceSampler->connectCondition($isSampleFrame->getOutput());
+        $distanceSampler->connectFloat($distanceThisFrame);
+
+        // --- Part 4: Accumulate the Sampled Distance ---
+        // This feedback loop accumulates the value captured by the sampler.
+        $distanceAccumulatorRegister = $this->createConditionalSetFloat(ConditionalBranch::FALSE);
+        $distanceAccumulatorRegister->connectCondition($isSampleFrame->getOutput());
+
+        $distanceAccumulatorAdder = $this->createAddFloats();
+        $distanceAccumulatorAdder->connectInputA($distanceAccumulatorRegister->getOutput());
+        $distanceAccumulatorAdder->connectInputB($distanceSampler->getOutput());
+        $distanceAccumulatorRegister->connectFloat($distanceAccumulatorAdder->getOutput());
+        $accumulatedDistance = $distanceAccumulatorAdder->getOutput();
+
+        $this->hideDebug($accumulatedDistance);
+
+        // --- Part 5: Final Calculation ---
+        $dividedValue = $this->createDivideFloats();
+        $dividedValue->connectInputA($accumulatedDistance);
+        $dividedValue->connectInputB($this->getFloat(4));
+
+        $finalResult = $this->createMultiplyFloats();
+        $finalResult->connectInputA($dividedValue->getOutput());
+        $finalResult->connectInputB($this->getFloat(100));
+
+        $this->hideDebug($finalResult->getOutput());
+        return $finalResult->getOutput();
+    } */
+
+    /**
+     * Builds the speed calculator graph.
+     * This version uses the explicit "create then connect" pattern to ensure all
+     * nodes are wired correctly, resolving the null output issue.
+     *
+     * @return Port The final output Port from the graph's calculation.
+     */
+    public function calculateSpeedFromGraph(): Port
+    {
+        // Part 1: Timer Creation
+        $timer = $this->computer->createFrameTimer(4);
+
+        // Part 2: Position Handling
+        $kartPosition = $this->getKartPosition();
+        $previousPosition = $this->computer->createPreviousVector3Register($timer->isActive, $kartPosition);
+
+        // Part 3: Distance Calculation & Sampling
+        $distanceThisFrame = $this->math->getDistance($previousPosition, $kartPosition);
+        $this->hideDebug($distanceThisFrame);
+
+        // CORRECTED: Explicitly connect inputs for the comparison node.
+        $isSampleFrame = $this->createCompareFloats(FloatOperator::EQUAL_TO);
+        $isSampleFrame->connectInputA($timer->counter);
+        $isSampleFrame->connectInputB($this->getFloat(2.0));
+
+        $sampledDistance = $this->computer->createValueSampler($distanceThisFrame, $isSampleFrame->getOutput());
+
+        // Part 4: Accumulation
+        $accumulatedDistance = $this->computer->createAccumulator($sampledDistance, $isSampleFrame->getOutput());
+        $this->debug($accumulatedDistance);
+
+        // Part 5: Final Calculation
+        // CORRECTED: Explicitly connect inputs for the division node.
+        $averageDistance = $this->createDivideFloats();
+        $averageDistance->connectInputA($accumulatedDistance);
+        $averageDistance->connectInputB($this->getFloat(4));
+
+        // CORRECTED: Explicitly connect inputs for the multiplication node.
+        $finalResult = $this->createMultiplyFloats();
+        $finalResult->connectInputA($averageDistance->getOutput());
+        $finalResult->connectInputB($this->getFloat(100));
+
+        $this->hideDebug($finalResult->getOutput());
+        return $finalResult->getOutput();
+    }
+
+
+    /**
+     * A helper to create the verbose position register from the graph.
+     * It stores a new value when the condition is FALSE and holds the old value when TRUE.
+     */
+    public function createPositionRegister(Port $holdCondition, Port $newValue): Port
+    {
+        $memoryGate = $this->createConditionalSetFloat(ConditionalBranch::TRUE);
+        $memoryGate->connectCondition($holdCondition);
+
+        $passthroughGate = $this->createConditionalSetFloat(ConditionalBranch::FALSE);
+        $passthroughGate->connectCondition($holdCondition);
+        $passthroughGate->connectFloat($newValue);
+
+        $adder = $this->createAddFloats();
+        $adder->connectInputA($memoryGate->getOutput());
+        $adder->connectInputB($passthroughGate->getOutput());
+
+        // Feedback loop
+        $memoryGate->connectFloat($adder->getOutput());
+
+        return $adder->getOutput();
     }
 }

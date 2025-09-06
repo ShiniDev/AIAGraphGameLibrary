@@ -40,10 +40,10 @@ $leftRaycast = $kartHelper->initializeSphereCast(LEFT_RIGHT_RAYCAST_SIZE, LEFT_R
 $rightRaycast = $kartHelper->initializeSphereCast(LEFT_RIGHT_RAYCAST_SIZE, LEFT_RIGHT_RAYCAST_DISTANCE);
 $middleRaycast = $kartHelper->initializeSphereCast(MIDDLE_RAYCAST_SIZE, MIDDLE_RAYCAST_DISTANCE);
 $kart->connectSpherecastMiddle($middleRaycast->getOutput());
-$kart->connectSpherecastTop($leftRaycast->getOutput());
-$kart->connectSpherecastBottom($rightRaycast->getOutput());
-$hitInfoLeft = $nodeHelper->createHitInfo()->connectRaycastHit($kart->getRaycastHitTop());
-$hitInfoRight = $nodeHelper->createHitInfo()->connectRaycastHit($kart->getRaycastHitBottom());
+$kart->connectSpherecastLeft($leftRaycast->getOutput());
+$kart->connectSpherecastRight($rightRaycast->getOutput());
+$hitInfoLeft = $nodeHelper->createHitInfo()->connectRaycastHit($kart->getRaycastHitLeft());
+$hitInfoRight = $nodeHelper->createHitInfo()->connectRaycastHit($kart->getRaycastHitRight());
 $hitInfoMiddle = $nodeHelper->createHitInfo()->connectRaycastHit($kart->getRaycastHitMiddle());
 // End
 

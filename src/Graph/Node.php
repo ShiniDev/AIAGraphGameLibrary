@@ -107,6 +107,11 @@ class Node implements \JsonSerializable
         return null;
     }
 
+    public function getOutputPort(string $id)
+    {
+        return $this->getPort($id, Port::OUTPUT);
+    }
+
     /**
      * Specifies data which should be serialized to JSON.
      *

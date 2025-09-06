@@ -4,6 +4,7 @@ namespace GraphLib\Helper;
 
 use GraphLib\Components\LatchComponent;
 use GraphLib\Components\RegisterComponent;
+use GraphLib\Components\TimerOutputs;
 use GraphLib\Enums\BooleanOperator;
 use GraphLib\Enums\ConditionalBranch;
 use GraphLib\Enums\FloatOperator;
@@ -435,9 +436,9 @@ class ComputerHelper
      * Creates a clock that increments a value by a set amount until it reaches a step limit.
      * Can be reset to zero at any time by the reset signal.
      *
-     * @param int        $step The value at which the clock stops incrementing.
-     * @param int        $increment The amount to add to the clock each frame.
-     * @param Port|null  $reset A boolean Port that, when true, forces the clock back to 0.
+     * @param int       $step The value at which the clock stops incrementing.
+     * @param int       $increment The amount to add to the clock each frame.
+     * @param Port|null $reset A boolean Port that, when true, forces the clock back to 0.
      * @return Port The output port representing the current value of the clock.
      */
     public function clock(int $step, int $increment = 1, ?Port $reset = null): Port
@@ -449,6 +450,10 @@ class ComputerHelper
         $isClockRunning = $this->createCompareFloats(FloatOperator::LESS_THAN);
 
         // --- 2. Connect the Incrementing Logic ---
+        $incrementedValue = $newValueAdder->getOutput();
+
+        // The condition to run is now based on the adder's raw output.
+        $isClockRunning->connectInputA($incrementedValue);
         $isClockRunning->connectInputB($this->getFloat($step));
 
         $clockRegister->connectCondition($isClockRunning->getOutput());
@@ -457,8 +462,6 @@ class ComputerHelper
 
         $newValueAdder->connectInputA($clockRegister->getOutput());
         $newValueAdder->connectInputB($incrementGate->getOutput());
-
-        $incrementedValue = $newValueAdder->getOutput();
 
         // --- 3. Add the Reset Logic ---
         $valueForNextFrame = $incrementedValue;
@@ -475,10 +478,10 @@ class ComputerHelper
         // --- 4. Create the Feedback Loop ---
         // The new value (with the reset override) is fed back into the register.
         $clockRegister->connectFloat($valueForNextFrame);
-        $isClockRunning->connectInputA($valueForNextFrame);
 
         return $valueForNextFrame;
     }
+
     /**
      * Creates a timer that counts up in frames when a condition is true,
      * and resets to a specific value when the condition is false.
@@ -618,5 +621,158 @@ class ComputerHelper
             $globalFrames,
             $valueToStore
         );
+    }
+
+    /**
+     * Creates a frame counter that runs for a specified number of frames.
+     * The result is cached to avoid creating duplicate timers.
+     */
+    public function createFrameTimer(int $frameCount): TimerOutputs
+    {
+        $key = "createFrameTimer_{$frameCount}";
+        return $this->getOrCache($key, function () use ($frameCount) {
+            $frameCounterRegister = $this->createConditionalSetFloat(ConditionalBranch::TRUE);
+            $frameCounterAdder = $this->createAddFloats();
+
+            $isTimeWindowActive = $this->createCompareFloats(FloatOperator::LESS_THAN);
+            $isTimeWindowActive->connectInputA($frameCounterAdder->getOutput());
+            $isTimeWindowActive->connectInputB($this->getFloat($frameCount));
+
+            $incrementGate = $this->createConditionalSetFloat(ConditionalBranch::TRUE);
+            $incrementGate->connectCondition($isTimeWindowActive->getOutput());
+            $incrementGate->connectFloat($this->getFloat(1));
+
+            $frameCounterRegister->connectCondition($isTimeWindowActive->getOutput());
+            $frameCounterAdder->connectInputA($frameCounterRegister->getOutput());
+            $frameCounterAdder->connectInputB($incrementGate->getOutput());
+            $frameCounterRegister->connectFloat($frameCounterAdder->getOutput());
+
+            $counterPort = $frameCounterAdder->getOutput();
+            $this->hideDebug($counterPort);
+
+            return new TimerOutputs($counterPort, $isTimeWindowActive->getOutput());
+        });
+    }
+
+    /**
+     * Creates a circuit that samples a value only when a trigger condition is met.
+     * The result is cached.
+     */
+    public function createValueSampler(Port $valueToSample, Port $sampleCondition): Port
+    {
+        $key = "createValueSampler_{$valueToSample->sID}_{$sampleCondition->sID}";
+        return $this->getOrCache($key, function () use ($valueToSample, $sampleCondition) {
+            $samplerGate = $this->createConditionalSetFloat(ConditionalBranch::TRUE);
+            $samplerGate->connectCondition($sampleCondition);
+            $samplerGate->connectFloat($valueToSample);
+            return $samplerGate->getOutput();
+        });
+    }
+
+    /**
+     * Creates an accumulator circuit that adds a value to a running total.
+     * The result is cached.
+     */
+    public function createAccumulator(Port $valueToAdd, Port $addCondition): Port
+    {
+        $key = "createAccumulator_{$valueToAdd->sID}_{$addCondition->sID}";
+        return $this->getOrCache($key, function () use ($valueToAdd, $addCondition) {
+            $accumulatorRegister = $this->createConditionalSetFloat(ConditionalBranch::FALSE);
+            $accumulatorRegister->connectCondition($addCondition);
+
+            $accumulatorAdder = $this->createAddFloats();
+            $accumulatorAdder->connectInputA($accumulatorRegister->getOutput());
+            $accumulatorAdder->connectInputB($valueToAdd);
+
+            $accumulatorRegister->connectFloat($accumulatorAdder->getOutput());
+
+            $accumulatedValuePort = $accumulatorAdder->getOutput();
+            $this->hideDebug($accumulatedValuePort);
+
+            return $accumulatedValuePort;
+        });
+    }
+
+    /**
+     * Creates a generic value register (sample-and-hold circuit).
+     * The result is cached.
+     */
+    public function createValueRegister(Port $holdCondition, Port $newValue): Port
+    {
+        $key = "createValueRegister_{$holdCondition->sID}_{$newValue->sID}";
+        return $this->getOrCache($key, function () use ($holdCondition, $newValue) {
+            $memoryGate = $this->createConditionalSetFloat(ConditionalBranch::TRUE);
+            $memoryGate->connectCondition($holdCondition);
+
+            $passthroughGate = $this->createConditionalSetFloat(ConditionalBranch::FALSE);
+            $passthroughGate->connectCondition($holdCondition);
+            $passthroughGate->connectFloat($newValue);
+
+            $adder = $this->createAddFloats();
+            $adder->connectInputA($memoryGate->getOutput());
+            $adder->connectInputB($passthroughGate->getOutput());
+
+            $memoryGate->connectFloat($adder->getOutput());
+
+            $outputPort = $adder->getOutput();
+            $this->hideDebug($outputPort);
+
+            return $outputPort;
+        });
+    }
+
+    public function createPreviousVector3Register(Port $holdCondition, Port $currentVector): Port
+    {
+        $vectorSplit = $this->math->splitVector3($currentVector);
+        $previousX = $this->createValueRegister($holdCondition, $vectorSplit->x);
+        $previousY = $this->createValueRegister($holdCondition, $vectorSplit->y);
+        $previousZ = $this->createValueRegister($holdCondition, $vectorSplit->z);
+        return $this->math->constructVector3($previousX, $previousY, $previousZ);
+    }
+
+    /**
+     * Creates a clock that tracks the total number of seconds elapsed.
+     * @param int $framesPerSecond The number of frames that constitute one second (e.g., 60).
+     * @return Port A Port that outputs the total running seconds.
+     */
+    public function createClock(int $framesPerSecond): Port
+    {
+        $key = "clock_total_seconds_{$framesPerSecond}";
+        return $this->getOrCache($key, function () use ($framesPerSecond) {
+            // --- Part 1: Build a Looping Frame Counter ---
+
+            // 1. Create a simple register to store the count from the previous frame.
+            $frameCountRegister = $this->createConditionalSetFloat(ConditionalBranch::TRUE);
+            $frameCountRegister->connectCondition($this->getBool(true));
+            $lastFrameCount = $frameCountRegister->getOutput();
+
+            // 2. Create an adder to increment the count.
+            $adder = $this->createAddFloats();
+            $adder->connectInputA($lastFrameCount);
+            $adder->connectInputB($this->getFloat(1));
+            $potentialNextCount = $adder->getOutput();
+
+            // 3. Create a comparator to check if the counter needs to roll over.
+            $comparator = $this->createCompareFloats(FloatOperator::GREATER_THAN_OR_EQUAL);
+            $comparator->connectInputA($potentialNextCount);
+            $comparator->connectInputB($this->getFloat($framesPerSecond));
+            $isRollover = $comparator->getOutput();
+
+            // 4. Choose the next value: 0 if rolling over, otherwise the incremented count.
+            $actualNextCount = $this->getConditionalFloat(
+                $isRollover,
+                $this->getFloat(0),
+                $potentialNextCount
+            );
+
+            // 5. IMPORTANT: Close the feedback loop.
+            $frameCountRegister->connectFloat($actualNextCount);
+
+            // --- Part 2: Use the rollover pulse to accumulate total seconds ---
+            // The `$isRollover` port now acts as a clean, once-per-second pulse.
+            $totalSeconds = $this->createAccumulator($this->getFloat(1), $isRollover);
+
+            return $totalSeconds;
+        });
     }
 }
