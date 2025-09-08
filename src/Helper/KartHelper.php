@@ -36,6 +36,7 @@ class KartHelper
     public ?Port $speed = null;
     public ?Port $distanceToNextWaypoint = null;
     public ?Port $distanceOfWaypoints = null;
+    public ?Port $initialRacingPoint = null;
     public MathHelper $math;
     public ComputerHelper $computer;
 
@@ -50,6 +51,7 @@ class KartHelper
         $reset = $this->compareFloats(FloatOperator::EQUAL_TO, $distance, 0.0);
         $speed = $this->calculateSpeedFromGraph();
         $this->speed = $speed;
+        $this->initialRacingPoint = $this->getInitialRacingPoint();
         $this->frames = $this->computer->clock(9999999999, 1, $reset);
         $this->track = $this->getTrackId();
     }
@@ -367,7 +369,6 @@ class KartHelper
 
         // The dot product tells us which side of the plane we are on.
         $dotProduct = $this->math->getDotProduct($vecToKart, $planeNormal);
-        $this->debug($dotProduct);
 
         // If the dot product is greater than 0, we have crossed the plane.
         return $this->compareFloats(FloatOperator::GREATER_THAN, $dotProduct, 0.0);
@@ -473,7 +474,6 @@ class KartHelper
                 )
             )
         );
-        $this->debug($shouldUpdate);
 
         return $this->computer->storeVector3ValueWhen(
             $shouldUpdate,
@@ -713,7 +713,7 @@ class KartHelper
 
         // Part 4: Accumulation
         $accumulatedDistance = $this->computer->createAccumulator($sampledDistance, $isSampleFrame->getOutput());
-        $this->debug($accumulatedDistance);
+        $this->hideDebug($accumulatedDistance);
 
         // Part 5: Final Calculation
         // CORRECTED: Explicitly connect inputs for the division node.
@@ -756,7 +756,7 @@ class KartHelper
 
     public function getInitialRacingPoint()
     {
-        $clock = $this->computer->createClock(2);
+        $clock = $this->computer->createClock(1);
         $waypoint = $this->getCenterOfNextWaypoint();
 
         $previousWaypoint = $this->computer->storeVector3When(

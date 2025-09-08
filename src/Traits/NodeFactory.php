@@ -77,9 +77,9 @@ trait NodeFactory
      *
      * @param string $key The unique key for the cache entry.
      * @param callable $creator A function that creates the value if it's not in the cache.
-     * @return Port|Vector3Split|TimerOutputs The cached or newly created Port object.
+     * @return Port|Vector3Split|TimerOutputs|array The cached or newly created Port object.
      */
-    private function getOrCache(string $key, callable $creator): Port|Vector3Split|TimerOutputs
+    private function getOrCache(string $key, callable $creator): Port|Vector3Split|TimerOutputs|array
     {
         // 1. Check if the key exists in the cache.
         if (isset($this->operationCache[$key]) && defined('CACHING')) {

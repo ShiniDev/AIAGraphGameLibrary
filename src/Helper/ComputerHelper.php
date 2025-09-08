@@ -730,67 +730,76 @@ class ComputerHelper
         return $this->math->constructVector3($previousX, $previousY, $previousZ);
     }
 
+    /**
+     * @return array{value: Port, tickSignal: Port, resetSignal: Port}
+     */
     public function createClock(float $countTo, float $step = 1.0): array
     {
-        $if1 = $this->createConditionalSetFloat(ConditionalBranch::TRUE);
-        $if2 = $this->createConditionalSetFloat(ConditionalBranch::TRUE);
-        $add1 = $this->createAddFloats();
-        $add1->connectInputA($if1->getOutput());
-        $add1->connectInputB($if2->getOutput());
-        $if1->connectFloat($add1->getOutput());
-        $if2->connectFloat($this->getFloat($step));
-        $add2 = $this->createAddFloats();
-        $add2->connectInputA($add1->getOutput());
-        $add2->connectInputB($this->getFloat(0));
-        $this->hideDebug($add2->getOutput());
-        $compFloats1 = $this->createCompareFloats(FloatOperator::LESS_THAN);
-        $compFloats1->connectInputA($add2->getOutput());
-        $compFloats1->connectInputB($this->getFloat($countTo));
-        $if1->connectCondition($compFloats1->getOutput());
-        $if2->connectCondition($compFloats1->getOutput());
-        return [
-            'value' => $add2->getOutput(),
-            'tickSignal' => $compFloats1->getOutput(),
-            'resetSignal' => $this->createNot()->connectInput($compFloats1->getOutput())->getOutput()
-        ];
+        return $this->getOrCache("createClock_{$countTo}_{$step}", function () use ($countTo, $step) {
+            $if1 = $this->createConditionalSetFloat(ConditionalBranch::TRUE);
+            $if2 = $this->createConditionalSetFloat(ConditionalBranch::TRUE);
+            $add1 = $this->createAddFloats();
+            $add1->connectInputA($if1->getOutput());
+            $add1->connectInputB($if2->getOutput());
+            $if1->connectFloat($add1->getOutput());
+            $if2->connectFloat($this->getFloat($step));
+            $add2 = $this->createAddFloats();
+            $add2->connectInputA($add1->getOutput());
+            $add2->connectInputB($this->getFloat(0));
+            $this->hideDebug($add2->getOutput());
+            $compFloats1 = $this->createCompareFloats(FloatOperator::LESS_THAN);
+            $compFloats1->connectInputA($add2->getOutput());
+            $compFloats1->connectInputB($this->getFloat($countTo));
+            $if1->connectCondition($compFloats1->getOutput());
+            $if2->connectCondition($compFloats1->getOutput());
+            return [
+                'value' => $add2->getOutput(),
+                'tickSignal' => $compFloats1->getOutput(),
+                'resetSignal' => $this->createNot()->connectInput($compFloats1->getOutput())->getOutput()
+            ];
+        });
     }
 
     public function valueStorage(Port $incrementSignal, ?Port $holdSignal = null, Port|float $incrementValue = 1.0, Port|float $initialValue = 0.0): Port
     {
-        if ($holdSignal === null) {
-            $holdSignal = $this->getBool(true);
-        }
-        $if1 = $this->createConditionalSetFloat(ConditionalBranch::TRUE);
-        $if2 = $this->createConditionalSetFloat(ConditionalBranch::TRUE);
-        $add1 = $this->createAddFloats();
-        $add1->connectInputA($if1->getOutput());
-        $add1->connectInputB($if2->getOutput());
-        $if1->connectFloat($add1->getOutput());
-        $if2->connectFloat($this->getFloat($incrementValue));
-        $add2 = $this->createAddFloats();
-        $add2->connectInputA($add1->getOutput());
-        $add2->connectInputB($this->getFloat($initialValue));
-        $this->debug($add2->getOutput());
-        $if1->connectCondition($holdSignal);
-        $if2->connectCondition($incrementSignal);
-        return $add2->getOutput();
+        return $this->getOrCache("valueStorage_{$incrementSignal->sID}_" . ($holdSignal ? $holdSignal->sID : 'null') . "_{$incrementValue}_{$initialValue}", function () use ($incrementSignal, $holdSignal, $incrementValue, $initialValue) {
+            if ($holdSignal === null) {
+                $holdSignal = $this->getBool(true);
+            }
+            $if1 = $this->createConditionalSetFloat(ConditionalBranch::TRUE);
+            $if2 = $this->createConditionalSetFloat(ConditionalBranch::TRUE);
+            $add1 = $this->createAddFloats();
+            $add1->connectInputA($if1->getOutput());
+            $add1->connectInputB($if2->getOutput());
+            $if1->connectFloat($add1->getOutput());
+            $if2->connectFloat($this->getFloat($incrementValue));
+            $add2 = $this->createAddFloats();
+            $add2->connectInputA($add1->getOutput());
+            $add2->connectInputB($this->getFloat($initialValue));
+            $this->hideDebug($add2->getOutput());
+            $if1->connectCondition($holdSignal);
+            $if2->connectCondition($incrementSignal);
+            return $add2->getOutput();
+        });
     }
 
     public function createMemoryLatch(Port $updateCondition, Port $newValueToStore): Port
     {
-        $memoryNode = $this->createConditionalSetFloat(ConditionalBranch::TRUE);
-        $memoryNode->connectCondition($this->getBool(true));
-        $previousValue = $memoryNode->getOutput();
+        return $this->getOrCache("createMemoryLatch_{$updateCondition->sID}_{$newValueToStore->sID}", function () use ($updateCondition, $newValueToStore) {
+            $memoryNode = $this->createConditionalSetFloat(ConditionalBranch::TRUE);
+            $memoryNode->connectCondition($this->getBool(true));
+            $previousValue = $memoryNode->getOutput();
 
-        $nextValueToStore = $this->getConditionalFloat(
-            $updateCondition,
-            $newValueToStore,
-            $previousValue
-        );
+            $nextValueToStore = $this->getConditionalFloat(
+                $updateCondition,
+                $newValueToStore,
+                $previousValue
+            );
 
-        $memoryNode->connectFloat($nextValueToStore);
-        $this->hideDebug($previousValue);
-        return $previousValue;
+            $memoryNode->connectFloat($nextValueToStore);
+            $this->hideDebug($previousValue);
+            return $previousValue;
+        });
     }
 
     public function storeFloatWhen(Port $updateCondition, Port $floatToStore): Port
