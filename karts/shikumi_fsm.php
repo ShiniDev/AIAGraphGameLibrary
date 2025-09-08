@@ -311,7 +311,6 @@ class Shikumi_FSM extends KartHelper
             $lastWaypointSplit->y,
             $nextWayPointSplit->y
         );
-
         $fromDownHillToFlat = $this->computer->getAndGate(
             $isFigureEight,
             $this->compareFloats(
@@ -328,12 +327,12 @@ class Shikumi_FSM extends KartHelper
             $this->compareFloats(
                 FloatOperator::LESS_THAN_OR_EQUAL,
                 $this->kartPosSplitFront->y,
-                .3
+                .29
             )
         );
 
         // $this->apexBias = $this->getConditionalFloat($inUphillSection, 1, $this->apexBias);
-        $this->apexBias = $this->getConditionalFloat($closeToFlatDuringDownHill, 5, $this->apexBias);
+        $this->apexBias = $this->getConditionalFloat($closeToFlatDuringDownHill, 4, $this->apexBias);
         $this->maxSpeed = $this->getConditionalFloat(
             $this->computer->getAndGate(
                 $isFigureEight,
@@ -347,7 +346,15 @@ class Shikumi_FSM extends KartHelper
             7,
             $this->maxSpeed
         );
+        $this->throttleReductionBasedOnSteering = $this->getConditionalFloat($this->computer->getAndGate(
+            $isFigureEight,
+            $this->computer->getOrGate(
+                $inDownhillSection,
+                $closeToFlatDuringDownHill
+            )
+        ), .25, $this->throttleReductionBasedOnSteering);
         $this->isHardSteerEnabled = $this->getConditionalBool($closeToFlatDuringDownHill, false, $this->isHardSteerEnabled);
+        $this->BRAKE_DISTANCE = $this->getConditionalFloat($closeToFlatDuringDownHill, self::BRAKE_DISTANCE * 1.2, $this->BRAKE_DISTANCE);
     }
 
     public function _setRayCastSizesByTrackId()
