@@ -99,14 +99,16 @@ class Shikumi_FSM extends KartHelper
     public ?Port $isHardSteerEnabled = null;
     public ?Port $useBlendedSteering = null;
     public ?Port $minSideDistance = null;
+    public ?Port $forceRaycastSteering = null;
 
     public function __construct(Graph $graph, string $name)
     {
         parent::__construct($graph);
+        $this->forceRaycastSteering = $this->getBool(false);
         $this->maxSpeed = $this->getFloat(self::MAX_SPEED);
         $this->isHardSteerEnabled = $this->getBool(true);
         $this->offThrottle = $this->getFloat(0);
-        $this->kart = $this->initializeKart($name, COUNTRY, COLOR, STAT_TOPSPEED, STAT_ACCELERATION, STAT_HANDLING, true);
+        $this->kart = $this->initializeKart($name, COUNTRY, COLOR, STAT_TOPSPEED, STAT_ACCELERATION, STAT_HANDLING, DEBUG);
         $this->kartPosSplitFront = $this->math->splitVector3($this->getKartForwardPosition());
         $this->kartPosSplitBack = $this->math->splitVector3($this->getKartBackwardPosition());
         $this->isMinimumDistanceHardSteerEnabled = $this->getBool(false);
@@ -171,8 +173,19 @@ class Shikumi_FSM extends KartHelper
         $this->BRAKE_FORCE = $this->getConditionalFloat($isBeachCoil, -3, $this->BRAKE_FORCE); // Stronger breaks
         $this->hardSteerDistance = $this->getConditionalFloat($isBeachCoil, self::HARD_STEER_DISTANCE * 90999, $this->hardSteerDistance);
         $this->isMinimumDistanceHardSteerEnabled = $this->getConditionalBool($isBeachCoil, true, $this->isMinimumDistanceHardSteerEnabled);
-        $this->apexBias = $this->getConditionalFloat($isBeachCoil, .91, $this->apexBias);
+        // $this->apexBias = $this->getConditionalFloat($isBeachCoil, .91, $this->apexBias);
         $this->minSideDistance = $this->getConditionalFloat($isBeachCoil, 0, $this->minSideDistance);
+        $this->apexBias = $this->getConditionalFloat(
+            $isBeachCoil,
+            $this->math->remapValue(
+                $this->distanceToNextWaypoint,
+                0,
+                $this->distanceOfWaypoints,
+                1,
+                .7
+            ),
+            $this->apexBias
+        );
     }
 
     public function _trackSnetterton()
@@ -183,6 +196,17 @@ class Shikumi_FSM extends KartHelper
         $this->LEFT_RIGHT_RAYCAST_SIZE = $this->getConditionalFloat($isSnetterton, .2, $this->LEFT_RIGHT_RAYCAST_SIZE);
         $this->LEFT_RIGHT_RAYCAST_DISTANCE = $this->getConditionalFloat($isSnetterton, self::LEFT_RIGHT_RAYCAST_DISTANCE * 1.5, $this->LEFT_RIGHT_RAYCAST_DISTANCE);
         $this->apexBias = $this->getConditionalFloat($isSnetterton, .9, $this->apexBias);
+        $this->apexBias = $this->getConditionalFloat(
+            $isSnetterton,
+            $this->math->remapValue(
+                $this->distanceToNextWaypoint,
+                0,
+                $this->distanceOfWaypoints,
+                1,
+                .7
+            ),
+            $this->apexBias
+        );
     }
 
     public function _trackCrissCross()
@@ -192,7 +216,19 @@ class Shikumi_FSM extends KartHelper
         $this->BRAKE_FORCE = $this->getConditionalFloat($isCrissCross, 1, $this->BRAKE_FORCE); // Disable breaks
         $this->LEFT_RIGHT_RAYCAST_SIZE = $this->getConditionalFloat($isCrissCross, .05, $this->LEFT_RIGHT_RAYCAST_SIZE);
         $this->LEFT_RIGHT_RAYCAST_DISTANCE = $this->getConditionalFloat($isCrissCross, self::LEFT_RIGHT_RAYCAST_DISTANCE * 1.5, $this->LEFT_RIGHT_RAYCAST_DISTANCE);
-        $this->apexBias = $this->getConditionalFloat($isCrissCross, .9, $this->apexBias);
+        // $this->apexBias = $this->getConditionalFloat($isCrissCross, .9, $this->apexBias);
+        $this->apexBias = $this->getConditionalFloat(
+            $isCrissCross,
+            $this->math->remapValue(
+                $this->distanceToNextWaypoint,
+                0,
+                $this->distanceOfWaypoints,
+                1,
+                .7
+            ),
+            $this->apexBias
+        );
+        $this->minSideDistance = $this->getConditionalFloat($isCrissCross, 1.1, $this->minSideDistance);
     }
 
     public function _trackClover()
@@ -327,7 +363,7 @@ class Shikumi_FSM extends KartHelper
             $this->compareFloats(
                 FloatOperator::LESS_THAN_OR_EQUAL,
                 $this->kartPosSplitFront->y,
-                .29
+                .33
             )
         );
 
@@ -352,9 +388,217 @@ class Shikumi_FSM extends KartHelper
                 $inDownhillSection,
                 $closeToFlatDuringDownHill
             )
-        ), .25, $this->throttleReductionBasedOnSteering);
+        ), 0, $this->throttleReductionBasedOnSteering);
         $this->isHardSteerEnabled = $this->getConditionalBool($closeToFlatDuringDownHill, false, $this->isHardSteerEnabled);
-        $this->BRAKE_DISTANCE = $this->getConditionalFloat($closeToFlatDuringDownHill, self::BRAKE_DISTANCE * 1.2, $this->BRAKE_DISTANCE);
+        $this->BRAKE_DISTANCE = $this->getConditionalFloat($this->computer->getOrGate(
+            $this->computer->getAndGate(
+                $isFigureEight,
+                $inDownhillSection
+            ),
+            $closeToFlatDuringDownHill
+        ), self::BRAKE_DISTANCE * 1.3, $this->BRAKE_DISTANCE);
+        $this->BRAKE_FORCE = $this->getConditionalFloat($closeToFlatDuringDownHill, -5, $this->BRAKE_FORCE);
+        $this->apexBias = $this->getConditionalFloat(
+            $this->computer->getAndGate(
+                $isFigureEight,
+                $this->compareFloats(
+                    FloatOperator::GREATER_THAN_OR_EQUAL,
+                    $this->kartPosSplitFront->y,
+                    1.19
+                ),
+                $this->middleCast->getOutput(),
+                $this->compareFloats(
+                    FloatOperator::LESS_THAN_OR_EQUAL,
+                    $this->middleCastDistance->getOutput(),
+                    4.5
+                ),
+            ),
+            2,
+            $this->apexBias
+        );
+
+        $clock = $this->computer->createClock(1);
+        $startFrame = $this->computer->valueStorage(
+            $clock['tickSignal'],
+            $this->computer->getAndGate(
+                $isFigureEight,
+                $this->compareFloats(
+                    FloatOperator::GREATER_THAN,
+                    $this->speed,
+                    0
+                )
+            )
+        );
+
+        $this->apexBias = $this->getConditionalFloat(
+            $this->computer->getAndGate(
+                $isFigureEight,
+                $this->compareFloats(
+                    FloatOperator::LESS_THAN_OR_EQUAL,
+                    $startFrame,
+                    30
+                )
+            ),
+            .65,
+            $this->apexBias
+        );
+    }
+
+    public function _trackTraining()
+    {
+        $isTraining = $this->isTrack(Tracks::TRAINING);
+
+        $lastWaypoint = $this->getCenterOfLastWaypoint();
+        $nextWayPoint = $this->getCenterOfNextWaypoint();
+        $lastWaypointSplit = $this->math->splitVector3($lastWaypoint);
+        $nextWayPointSplit = $this->math->splitVector3($nextWayPoint);
+
+        $inUphillSection = $this->compareFloats(
+            FloatOperator::LESS_THAN,
+            $lastWaypointSplit->y,
+            $nextWayPointSplit->y
+        );
+        $inDownhillSection = $this->compareFloats(
+            FloatOperator::GREATER_THAN,
+            $lastWaypointSplit->y,
+            $nextWayPointSplit->y
+        );
+        $fromDownHillToFlat = $this->computer->getAndGate(
+            $isTraining,
+            $this->compareFloats(
+                FloatOperator::LESS_THAN_OR_EQUAL,
+                $nextWayPointSplit->y,
+                .0001
+            ),
+            $inDownhillSection
+        );
+        $closeToFlatDuringDownHill = $this->computer->getAndGate(
+            $fromDownHillToFlat,
+            $this->compareFloats(
+                FloatOperator::LESS_THAN_OR_EQUAL,
+                $this->kartPosSplitFront->y,
+                .1
+            )
+        );
+
+        $this->apexBias = $this->getConditionalFloat(
+            $isTraining,
+            $this->math->remapValue(
+                $this->distanceToNextWaypoint,
+                0,
+                $this->distanceOfWaypoints,
+                1,
+                .7
+            ),
+            $this->apexBias
+        );
+
+        $this->apexBias = $this->getConditionalFloat(
+            $this->computer->getAndGate(
+                $isTraining,
+                /* $this->compareFloats(
+                    FloatOperator::GREATER_THAN_OR_EQUAL,
+                    $this->kartPosSplitFront->y,
+                    1.19
+                ), */
+                $this->middleCast->getOutput(),
+                $this->compareFloats(
+                    FloatOperator::LESS_THAN_OR_EQUAL,
+                    $this->middleCastDistance->getOutput(),
+                    5
+                ),
+            ),
+            1.2,
+            $this->apexBias
+        );
+
+        $this->apexBias = $this->getConditionalFloat(
+            $this->computer->getAndGate(
+                $isTraining,
+                $this->compareFloats(
+                    FloatOperator::GREATER_THAN_OR_EQUAL,
+                    $this->kartPosSplitFront->y,
+                    1
+                ),
+                $this->middleCast->getOutput(),
+                $this->compareFloats(
+                    FloatOperator::LESS_THAN_OR_EQUAL,
+                    $this->middleCastDistance->getOutput(),
+                    5
+                ),
+            ),
+            10,
+            $this->apexBias
+        );
+
+
+        $this->centerPoint = $this->getConditionalVector3($this->computer->getAndGate($isTraining, $inUphillSection), $this->math->movePointAlongVector($this->getCenterOfNextWaypoint(), $this->math->getDirection($this->getKartPosition(), $this->getKartLeftPosition()), -.3), $this->centerPoint);
+        $this->apexBias = $this->getConditionalFloat(
+            $this->computer->getAndGate(
+                $isTraining,
+                $inUphillSection
+            ),
+            0,
+            $this->apexBias
+        );
+
+        $this->maxSpeed = $this->getConditionalFloat(
+            $this->computer->getAndGate(
+                $isTraining,
+                $closeToFlatDuringDownHill,
+                $this->compareFloats(
+                    FloatOperator::GREATER_THAN_OR_EQUAL,
+                    $this->speed,
+                    6.5
+                )
+            ),
+            6.5,
+            $this->maxSpeed
+        );
+        $this->offThrottle = $this->getConditionalFloat($this->computer->getAndGate(
+            $isTraining,
+            $this->computer->getOrGate(
+                $inDownhillSection,
+                $closeToFlatDuringDownHill
+            )
+        ), -.5, $this->offThrottle);
+        $this->BRAKE_DISTANCE = $this->getConditionalFloat(
+            $this->computer->getOrGate(
+                $this->computer->getAndGate(
+                    $isTraining,
+                    $inDownhillSection
+                ),
+                $closeToFlatDuringDownHill
+            ),
+            self::BRAKE_DISTANCE * 1.3,
+            $this->BRAKE_DISTANCE
+        );
+        $this->throttleReductionBasedOnSteering = $this->getConditionalFloat($this->computer->getAndGate(
+            $isTraining,
+            $this->computer->getOrGate(
+                $inDownhillSection,
+                $closeToFlatDuringDownHill
+            )
+        ), 1, $this->throttleReductionBasedOnSteering);
+        $this->minSideDistance = $this->getConditionalFloat($isTraining, 0.4, $this->minSideDistance);
+        $this->apexBias = $this->getConditionalFloat($closeToFlatDuringDownHill, 5, $this->apexBias);
+        /*  $this->apexBias = $this->getConditionalFloat(
+            $this->computer->getAndGate(
+                $isTraining,
+                $inDownhillSection,
+                $this->computer->getNotGate($closeToFlatDuringDownHill)
+            ),
+            $this->math->remapValue(
+                $this->distanceToNextWaypoint,
+                0,
+                $this->distanceOfWaypoints,
+                .5,
+                1.5
+            ),
+            $this->apexBias
+        ); */
+        // $this->isHardSteerEnabled = $this->getConditionalBool($closeToFlatDuringDownHill, false, $this->isHardSteerEnabled);
+        $this->BRAKE_FORCE = $this->getConditionalFloat($closeToFlatDuringDownHill, -5, $this->BRAKE_FORCE);
     }
 
     public function _setRayCastSizesByTrackId()
@@ -375,6 +619,7 @@ class Shikumi_FSM extends KartHelper
         $this->_trackStandard();
         $this->_trackFigureEight();
         $this->_trackSnetterton();
+        $this->_trackTraining();
     }
 
     public function isTrack(Tracks $track)
@@ -575,15 +820,14 @@ class Shikumi_FSM extends KartHelper
             $this->compareFloats(FloatOperator::LESS_THAN_OR_EQUAL, $this->rightHitDistance, $this->minSideDistance),
         );
 
-        $this->useBlendedSteering = $this->getConditionalBool(
-            $readjustSteering,
-            true,
-            $this->useBlendedSteering
-        );
-
         $this->steering = $this->getConditionalFloat(
-            $this->useBlendedSteering,
+            $this->computer->getOrGate($readjustSteering, $this->useBlendedSteering),
             $blendedSteering,
+            $this->steering
+        );
+        $this->steering = $this->getConditionalFloat(
+            $this->forceRaycastSteering,
+            $rayCastSteering,
             $this->steering
         );
     }
