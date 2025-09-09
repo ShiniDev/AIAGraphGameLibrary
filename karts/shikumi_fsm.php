@@ -11,12 +11,13 @@ use GraphLib\Helper\MathHelper;
 use GraphLib\Helper\Tracks;
 use GraphLib\Nodes\AddFloats;
 use GraphLib\Nodes\CompareBool;
+use GraphLib\Nodes\CompareFloats;
 use GraphLib\Nodes\Vector3Split;
 use GraphLib\Traits\SlimeFactory;
 
 require_once '../vendor/autoload.php';
 
-const NAME = 'Shikumi_FSM';
+const NAME = 'Shikumi';
 const COLOR = 'White';
 const COUNTRY = 'Japan';
 const STAT_TOPSPEED = 10;
@@ -84,6 +85,7 @@ class Shikumi_FSM extends KartHelper
 
     // --- FSM PROPERTIES ---
     public ?Port $masterState = null;
+    public ?AddFloats $masterStateHandle = null;
     public ?Port $conditionForBraking = null;
     public ?Port $conditionForSteering = null;
     public ?Port $isBreakEnabled = null;
@@ -105,6 +107,8 @@ class Shikumi_FSM extends KartHelper
     {
         parent::__construct($graph);
         $this->forceRaycastSteering = $this->getBool(false);
+        $this->masterStateHandle = $this->createAddFloats();
+        $this->masterStateHandle->connectInputA($this->getFloat(0));
         $this->maxSpeed = $this->getFloat(self::MAX_SPEED);
         $this->isHardSteerEnabled = $this->getBool(true);
         $this->offThrottle = $this->getFloat(0);
@@ -447,6 +451,11 @@ class Shikumi_FSM extends KartHelper
     public function _trackTraining()
     {
         $isTraining = $this->isTrack(Tracks::TRAINING);
+        $this->LEFT_RIGHT_RAYCAST_SIZE = $this->getConditionalFloat(
+            $isTraining,
+            .05,
+            $this->LEFT_RIGHT_RAYCAST_SIZE
+        );
 
         $lastWaypoint = $this->getCenterOfLastWaypoint();
         $nextWayPoint = $this->getCenterOfNextWaypoint();
@@ -477,7 +486,7 @@ class Shikumi_FSM extends KartHelper
             $this->compareFloats(
                 FloatOperator::LESS_THAN_OR_EQUAL,
                 $this->kartPosSplitFront->y,
-                .1
+                .3
             )
         );
 
@@ -488,8 +497,26 @@ class Shikumi_FSM extends KartHelper
                 0,
                 $this->distanceOfWaypoints,
                 1,
-                .7
+                .9
             ),
+            $this->apexBias
+        );
+        $state = $this->masterStateHandle->getOutput();
+        $this->apexBias = $this->getConditionalFloat(
+            $this->computer->getAndGate(
+                $isTraining,
+                $this->compareFloats(
+                    FloatOperator::EQUAL_TO,
+                    $state,
+                    KartFsmState::DRIVING->value
+                ),
+                $this->compareFloats(
+                    FloatOperator::LESS_THAN_OR_EQUAL,
+                    $this->kartPosSplitBack->y,
+                    .27
+                )
+            ),
+            0.25,
             $this->apexBias
         );
 
@@ -508,7 +535,7 @@ class Shikumi_FSM extends KartHelper
                     5
                 ),
             ),
-            1.2,
+            1.1,
             $this->apexBias
         );
 
@@ -542,6 +569,8 @@ class Shikumi_FSM extends KartHelper
             $this->apexBias
         );
 
+
+
         $this->maxSpeed = $this->getConditionalFloat(
             $this->computer->getAndGate(
                 $isTraining,
@@ -549,10 +578,10 @@ class Shikumi_FSM extends KartHelper
                 $this->compareFloats(
                     FloatOperator::GREATER_THAN_OR_EQUAL,
                     $this->speed,
-                    6.5
+                    6
                 )
             ),
-            6.5,
+            6,
             $this->maxSpeed
         );
         $this->offThrottle = $this->getConditionalFloat($this->computer->getAndGate(
@@ -561,7 +590,7 @@ class Shikumi_FSM extends KartHelper
                 $inDownhillSection,
                 $closeToFlatDuringDownHill
             )
-        ), -.5, $this->offThrottle);
+        ), -.2, $this->offThrottle);
         $this->BRAKE_DISTANCE = $this->getConditionalFloat(
             $this->computer->getOrGate(
                 $this->computer->getAndGate(
@@ -580,23 +609,22 @@ class Shikumi_FSM extends KartHelper
                 $closeToFlatDuringDownHill
             )
         ), 1, $this->throttleReductionBasedOnSteering);
-        $this->minSideDistance = $this->getConditionalFloat($isTraining, 0.4, $this->minSideDistance);
-        $this->apexBias = $this->getConditionalFloat($closeToFlatDuringDownHill, 5, $this->apexBias);
-        /*  $this->apexBias = $this->getConditionalFloat(
+        $this->minSideDistance = $this->getConditionalFloat($isTraining, 0.2, $this->minSideDistance);
+
+
+        /*        $this->apexBias = $this->getConditionalFloat(
             $this->computer->getAndGate(
                 $isTraining,
-                $inDownhillSection,
-                $this->computer->getNotGate($closeToFlatDuringDownHill)
+                $this->compareFloats(
+                    FloatOperator::EQUAL_TO,
+                    $state,
+                    KartFsmState::STEERING->value
+                )
             ),
-            $this->math->remapValue(
-                $this->distanceToNextWaypoint,
-                0,
-                $this->distanceOfWaypoints,
-                .5,
-                1.5
-            ),
+            1.25,
             $this->apexBias
         ); */
+        $this->apexBias = $this->getConditionalFloat($closeToFlatDuringDownHill, 4, $this->apexBias);
         // $this->isHardSteerEnabled = $this->getConditionalBool($closeToFlatDuringDownHill, false, $this->isHardSteerEnabled);
         $this->BRAKE_FORCE = $this->getConditionalFloat($closeToFlatDuringDownHill, -5, $this->BRAKE_FORCE);
     }
@@ -733,6 +761,7 @@ class Shikumi_FSM extends KartHelper
                 KartFsmState::DRIVING->value // Default state
             )
         );
+        $this->masterStateHandle->connectInputB($this->masterState);
     }
 
     public function _setSteering()

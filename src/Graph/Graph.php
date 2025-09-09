@@ -362,8 +362,16 @@ class Graph implements \JsonSerializable
         if ($version < 1) {
             $version = 1;
         }
-        $versionedName = $baseName . "_V" . $version;
-        $versionedFile = $savePath . $baseName . $version . $extension;
+        if (!$update) {
+            $versionedName = $baseName;
+        } else {
+            $versionedName = $baseName . "_V" . $version;
+        }
+        if (!$update) {
+            $versionedFile = $savePath . $baseName . $extension;
+        } else {
+            $versionedFile = $savePath . $baseName . $version . $extension;
+        }
         return [
             'name' => $versionedName,
             'file' => $versionedFile
